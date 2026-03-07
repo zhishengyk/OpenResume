@@ -27,6 +27,14 @@ class NormalizedJobDraft:
     raw_payload: dict
 
 
+class PlatformBlockedError(RuntimeError):
+    """Raised when the upstream platform requires manual intervention."""
+
+
+class PlatformDataError(RuntimeError):
+    """Raised when the upstream platform response is unusable."""
+
+
 class PlatformAdapter(Protocol):
     platform: str
 

@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 
 os.environ.setdefault("OPENRESUME_DISABLE_BROWSER_OPEN", "1")
+os.environ.setdefault("OPENRESUME_BOSS_SEARCH_MODE", "fixture")
 TEST_STORAGE = Path(__file__).resolve().parent / ".test-storage"
 TEST_STORAGE.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("OPENRESUME_STORAGE_DIR", str(TEST_STORAGE))
