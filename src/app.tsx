@@ -30,10 +30,12 @@ export default function App() {
               <div className="relative flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <p className="text-xs uppercase tracking-[0.28em] text-slate">
-                    Safe workflow console
+                    {"\u5b89\u5168\u5de5\u4f5c\u53f0"}
                   </p>
                   <p className="mt-3 max-w-2xl font-display text-5xl italic leading-tight text-ink">
-                    Search hard, explain the fit, and stop before the risky click.
+                    {
+                      "\u5148\u627e\u51c6\u5c97\u4f4d\uff0c\u518d\u89e3\u91ca\u5339\u914d\u7406\u7531\uff0c\u5e76\u5728\u9ad8\u98ce\u9669\u90a3\u4e00\u6b65\u4e4b\u524d\u505c\u4e0b\u6765\u3002"
+                    }
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">

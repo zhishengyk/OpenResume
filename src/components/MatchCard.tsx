@@ -41,7 +41,7 @@ export function MatchCard({ match }: MatchCardProps) {
 
         <div className="rounded-[24px] border border-ink/10 bg-paper px-5 py-4 text-right">
           <p className="text-xs uppercase tracking-[0.2em] text-slate">
-            Final score
+            最终匹配分
           </p>
           <p className="font-display text-5xl italic text-ink">
             {Math.round(match.final_score)}
@@ -53,20 +53,20 @@ export function MatchCard({ match }: MatchCardProps) {
         <div className="rounded-[24px] bg-paper p-5">
           <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-slate">
             <Sparkles size={14} />
-            Match rationale
+            匹配理由
           </p>
           <p className="mt-3 text-sm leading-7 text-ink">
-            {match.llm_summary || "Rule engine matched this role. LLM commentary is still pending."}
+            {match.llm_summary || "规则引擎已经完成初筛，正在等待模型补充更细的匹配说明。"}
           </p>
           <p className="mt-4 text-xs uppercase tracking-[0.18em] text-slate">
-            JD excerpt
+            JD 摘要
           </p>
           <p className="mt-2 text-sm leading-7 text-slate">{match.jd_excerpt}</p>
         </div>
 
         <div className="space-y-4">
           <div className="rounded-[24px] border border-mint/30 bg-mint/10 p-4">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate">Highlights</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate">匹配亮点</p>
             <div className="mt-3 flex flex-wrap gap-2">
               {match.highlights.map((item) => (
                 <span
@@ -81,7 +81,7 @@ export function MatchCard({ match }: MatchCardProps) {
 
           <div className="rounded-[24px] border border-ember/20 bg-ember/10 p-4">
             <p className="text-xs uppercase tracking-[0.2em] text-slate">
-              Missing / risk
+              缺口与风险
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               {[...match.missing_keywords, ...match.risk_flags].map((item) => (
@@ -105,7 +105,7 @@ export function MatchCard({ match }: MatchCardProps) {
           disabled={reviewMutation.isPending}
         >
           <ArrowUpRight size={16} />
-          {reviewMutation.isPending ? "Opening..." : "Open review"}
+          {reviewMutation.isPending ? "正在打开..." : "打开职位页"}
         </button>
         <button
           type="button"
@@ -114,7 +114,7 @@ export function MatchCard({ match }: MatchCardProps) {
           disabled={guidedApplyMutation.isPending}
         >
           <Zap size={16} />
-          {guidedApplyMutation.isPending ? "Preparing..." : "Guided apply"}
+          {guidedApplyMutation.isPending ? "正在准备..." : "引导投递"}
         </button>
         <button
           type="button"
@@ -126,14 +126,13 @@ export function MatchCard({ match }: MatchCardProps) {
           }
         >
           <ShieldAlert size={16} />
-          Open original listing
+          打开原始链接
         </button>
       </div>
 
       <p className="mt-4 text-xs uppercase tracking-[0.18em] text-slate">
-        Recommended mode: {modeLabel(match.llm_score ? "guided_apply" : "review_in_browser")}
+        建议模式：{modeLabel(match.llm_score ? "guided_apply" : "review_in_browser")}
       </p>
     </article>
   );
 }
-

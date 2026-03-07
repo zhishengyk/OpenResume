@@ -7,6 +7,7 @@ import { StatusPill } from "../components/StatusPill";
 import { Timeline } from "../components/Timeline";
 import { useEventStream } from "../hooks/useEventStream";
 import { api } from "../lib/api";
+import { pillLabel } from "../lib/utils";
 import type { SearchEvent } from "../types";
 
 export function ResultsPage() {
@@ -31,7 +32,12 @@ export function ResultsPage() {
 
   useEventStream(sessionId, (event) => {
     setEvents((current) => {
-      if (current.some((item) => item.type === event.type && item.timestamp === event.timestamp)) {
+      if (
+        current.some(
+          (item) =>
+            item.type === event.type && item.timestamp === event.timestamp,
+        )
+      ) {
         return current;
       }
 
@@ -49,15 +55,13 @@ export function ResultsPage() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.24em] text-slate">
-              Search session
+              搜索任务
             </p>
             <h1 className="mt-3 font-display text-5xl italic text-ink">
-              Observe the pipeline before you touch the platform.
+              先看清流水线，再决定是否进入平台。
             </h1>
           </div>
-          {sessionQuery.data ? (
-            <StatusPill>{sessionQuery.data.status}</StatusPill>
-          ) : null}
+          {sessionQuery.data ? <StatusPill>{sessionQuery.data.status}</StatusPill> : null}
         </div>
         {sessionQuery.data?.summary ? (
           <p className="mt-4 max-w-3xl text-sm leading-7 text-slate">
@@ -68,19 +72,19 @@ export function ResultsPage() {
 
       <section className="grid gap-4 lg:grid-cols-3">
         <MetricCard
-          label="Matches visible"
+          label="可见岗位数"
           value={String(matchesQuery.data?.length ?? 0)}
-          hint="Cards appear from rule ranking first, then gain richer LLM commentary."
+          hint="先展示规则分卡片，再逐步补充模型解释和风险摘要。"
         />
         <MetricCard
-          label="Current platform"
-          value={sessionQuery.data?.platform.toUpperCase() || "--"}
-          hint="Platform adapters stay capability-scoped, not fully privileged."
+          label="当前平台"
+          value={sessionQuery.data ? pillLabel(sessionQuery.data.platform) : "--"}
+          hint="平台适配器按能力边界开放，不会默认拥有全部高权限动作。"
         />
         <MetricCard
-          label="Top score"
+          label="最高分"
           value={topMatch ? String(Math.round(topMatch.final_score)) : "--"}
-          hint="Combined rule and LLM score after conservative hard filtering."
+          hint="最终得分由规则过滤和模型分析共同构成。"
         />
       </section>
 
@@ -88,11 +92,12 @@ export function ResultsPage() {
         <Timeline events={events} />
         <div className="space-y-5">
           {matchesQuery.data?.length ? (
-            matchesQuery.data.map((match) => <MatchCard key={match.id} match={match} />)
+            matchesQuery.data.map((match) => (
+              <MatchCard key={match.id} match={match} />
+            ))
           ) : (
             <div className="rounded-[32px] border border-ink/10 bg-shell/90 p-8 text-sm leading-7 text-slate shadow-console">
-              Search output will land here after the first pipeline stage publishes
-              matches. Rule-ranked cards appear before LLM commentary is attached.
+              第一阶段规则筛选完成后，岗位卡片会先出现在这里；随后模型解释会逐步补充到卡片详情中。
             </div>
           )}
         </div>
@@ -100,4 +105,3 @@ export function ResultsPage() {
     </div>
   );
 }
-

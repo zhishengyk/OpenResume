@@ -13,18 +13,18 @@ const modeCards: Array<{
 }> = [
   {
     mode: "recommend_only",
-    title: "Recommend only",
-    body: "Search and rank roles with no action taken on the platform.",
+    title: "仅推荐",
+    body: "只负责搜索、筛选和排序岗位，不在平台上执行任何动作。",
   },
   {
     mode: "review_in_browser",
-    title: "Review in browser",
-    body: "Open the role in a dedicated browser session so the user controls the page.",
+    title: "浏览职位",
+    body: "在专用浏览器会话中打开职位页面，由你自己掌控浏览和判断过程。",
   },
   {
     mode: "guided_apply",
-    title: "Guided apply",
-    body: "Prepare reusable details in the flow, then stop before any final submit action.",
+    title: "引导投递",
+    body: "自动推进到投递流程并尽量复用资料，但会在最终提交前停止。",
   },
 ];
 
@@ -45,7 +45,9 @@ export function SearchPage() {
   const [jobTargets, setJobTargets] = useState("前端工程师, 全栈工程师");
   const [cities, setCities] = useState("上海, 杭州");
   const [salaryFloor, setSalaryFloor] = useState("25000");
-  const [mustHaveKeywords, setMustHaveKeywords] = useState("React, TypeScript, Node.js");
+  const [mustHaveKeywords, setMustHaveKeywords] = useState(
+    "React, TypeScript, Node.js",
+  );
 
   const guidedConsentMutation = useMutation({
     mutationFn: () => api.createGuidedApplyConsent(platform),
@@ -70,20 +72,20 @@ export function SearchPage() {
     },
   });
 
-  const guidedApplyEnabled = appStateQuery.data?.guided_apply_consents.includes(platform);
+  const guidedApplyEnabled =
+    appStateQuery.data?.guided_apply_consents.includes(platform);
 
   return (
     <div className="space-y-6">
       <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
         <p className="text-xs uppercase tracking-[0.24em] text-slate">
-          Search control
+          搜索控制台
         </p>
         <h1 className="mt-3 font-display text-5xl italic text-ink">
-          Search first. Move carefully.
+          先找，再看，再谨慎推进。
         </h1>
         <p className="mt-4 max-w-3xl text-sm leading-7 text-slate">
-          The workflow is deliberately conservative. Risk gates sit in front of
-          any guided action, and the final application submit remains user-held.
+          当前流程刻意保持保守。任何引导动作前都有风险门禁，最终提交动作永远由用户亲自完成。
         </p>
       </section>
 
@@ -111,7 +113,7 @@ export function SearchPage() {
             <div className="grid gap-5 md:grid-cols-2">
               <label className="space-y-2">
                 <span className="text-xs uppercase tracking-[0.2em] text-slate">
-                  Platform
+                  平台
                 </span>
                 <select
                   value={platform}
@@ -119,12 +121,12 @@ export function SearchPage() {
                   className="w-full rounded-2xl border border-ink/10 bg-paper px-4 py-3 text-sm text-ink outline-none transition focus:border-ink/30"
                 >
                   <option value="boss">Boss 直聘</option>
-                  <option value="liepin">猎聘 (coming next)</option>
+                  <option value="liepin">猎聘（后续接入）</option>
                 </select>
               </label>
               <label className="space-y-2">
                 <span className="text-xs uppercase tracking-[0.2em] text-slate">
-                  Salary floor
+                  薪资下限
                 </span>
                 <input
                   value={salaryFloor}
@@ -134,7 +136,7 @@ export function SearchPage() {
               </label>
               <label className="space-y-2">
                 <span className="text-xs uppercase tracking-[0.2em] text-slate">
-                  Job targets
+                  目标岗位
                 </span>
                 <textarea
                   rows={4}
@@ -145,7 +147,7 @@ export function SearchPage() {
               </label>
               <label className="space-y-2">
                 <span className="text-xs uppercase tracking-[0.2em] text-slate">
-                  Cities
+                  目标城市
                 </span>
                 <textarea
                   rows={4}
@@ -157,7 +159,7 @@ export function SearchPage() {
             </div>
             <label className="mt-5 block space-y-2">
               <span className="text-xs uppercase tracking-[0.2em] text-slate">
-                Must-have keywords
+                必须命中关键词
               </span>
               <textarea
                 rows={4}
@@ -176,8 +178,8 @@ export function SearchPage() {
                   disabled={guidedConsentMutation.isPending}
                 >
                   {guidedConsentMutation.isPending
-                    ? "Recording consent..."
-                    : "Acknowledge guided-apply risk"}
+                    ? "正在记录确认..."
+                    : "确认引导投递风险"}
                 </button>
               ) : null}
               <button
@@ -190,7 +192,7 @@ export function SearchPage() {
                 }
               >
                 <SearchIcon size={16} />
-                {searchMutation.isPending ? "Starting search..." : "Start search session"}
+                {searchMutation.isPending ? "正在启动任务..." : "开始搜索任务"}
               </button>
             </div>
           </div>
@@ -202,12 +204,10 @@ export function SearchPage() {
               <ShieldAlert className="mt-1 text-ember" size={18} />
               <div>
                 <p className="text-xs uppercase tracking-[0.24em] text-ember">
-                  Risk posture
+                  风险姿态
                 </p>
                 <p className="mt-3 text-sm leading-7 text-slate">
-                  This build only supports conservative timing, rate limiting,
-                  and human takeover. It does not provide stealth, spoofing, or
-                  anti-detection behavior.
+                  当前版本只支持保守节流、限频和人工接管，不提供隐身伪装、指纹欺骗或反检测能力。
                 </p>
               </div>
             </div>
@@ -215,12 +215,12 @@ export function SearchPage() {
 
           <div className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
             <p className="text-xs uppercase tracking-[0.24em] text-slate">
-              Current limits
+              当前限制
             </p>
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <div className="rounded-[24px] bg-paper p-4">
                 <p className="text-xs uppercase tracking-[0.18em] text-slate">
-                  Hourly remaining
+                  每小时剩余次数
                 </p>
                 <p className="mt-2 font-display text-4xl italic text-ink">
                   {riskStatusQuery.data?.remaining_hourly ?? "--"}
@@ -228,7 +228,7 @@ export function SearchPage() {
               </div>
               <div className="rounded-[24px] bg-paper p-4">
                 <p className="text-xs uppercase tracking-[0.18em] text-slate">
-                  Daily remaining
+                  每日剩余次数
                 </p>
                 <p className="mt-2 font-display text-4xl italic text-ink">
                   {riskStatusQuery.data?.remaining_daily ?? "--"}
@@ -236,22 +236,21 @@ export function SearchPage() {
               </div>
             </div>
             <p className="mt-5 text-sm leading-7 text-slate">
-              Cooldown:{" "}
+              冷却时间：
               {riskStatusQuery.data?.cooldown_until
                 ? new Date(riskStatusQuery.data.cooldown_until).toLocaleString()
-                : "clear"}
+                : "无"}
             </p>
             {mode === "guided_apply" ? (
               <div className="mt-5 rounded-[24px] border border-ink/10 bg-paper p-4">
                 <div className="flex items-center gap-2 text-ink">
                   <AlertTriangle size={16} />
                   <p className="font-semibold">
-                    Guided apply still requires final user confirmation.
+                    引导投递仍然需要你亲自完成最后确认。
                   </p>
                 </div>
                 <p className="mt-3 text-sm leading-7 text-slate">
-                  The flow may pre-stage reusable data and open the dedicated
-                  session page, but it stops before any final platform submit.
+                  系统可以帮你打开流程、预填一部分通用信息，但会在平台最终提交前停止。
                 </p>
               </div>
             ) : null}

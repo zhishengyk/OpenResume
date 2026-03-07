@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "openresume-api"
 version = "0.1.0"
-description = "Local API service for the OpenResume desktop app."
+description = "OpenResume 桌面应用的本地接口服务。"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115,<1.0",

@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from pathlib import Path
 import random
 import webbrowser
 
@@ -36,7 +35,11 @@ class BossAdapter:
         )
 
     async def start_session(self, db: Session) -> None:
-        browser_session_service.start(db, self.platform, "https://www.zhipin.com/web/user/")
+        browser_session_service.start(
+            db,
+            self.platform,
+            "https://www.zhipin.com/web/user/",
+        )
 
     async def session_state(self, db: Session) -> dict:
         return browser_session_service.state(db, self.platform)
@@ -46,7 +49,9 @@ class BossAdapter:
         search: SearchSessionCreate,
         profile: CandidateProfile,
     ) -> list[NormalizedJobDraft]:
-        wanted_targets = [value.lower() for value in search.job_targets or profile.target_roles]
+        wanted_targets = [
+            value.lower() for value in search.job_targets or profile.target_roles
+        ]
         wanted_cities = set(search.cities or profile.preferred_cities)
         results: list[NormalizedJobDraft] = []
 
@@ -59,7 +64,9 @@ class BossAdapter:
                     " ".join(raw.get("tags", [])),
                 ]
             ).lower()
-            if wanted_targets and not any(target.lower() in haystack for target in wanted_targets):
+            if wanted_targets and not any(
+                target.lower() in haystack for target in wanted_targets
+            ):
                 continue
             if wanted_cities and raw["city"] not in wanted_cities:
                 continue
@@ -89,14 +96,15 @@ class BossAdapter:
     async def open_review(self, url: str) -> str:
         if not settings.disable_browser_open:
             webbrowser.open(url)
-        return "Opened listing in the default browser for manual review."
+        return "已在默认浏览器中打开职位详情页，请你自行查看。"
 
     async def guided_apply(self, url: str, profile: CandidateProfile) -> str:
         if not settings.disable_browser_open:
             webbrowser.open(url)
         return (
-            f"Opened dedicated listing flow for {profile.full_name or 'candidate'} and stopped before final submit."
+            f"已为 {profile.full_name or '候选人'} 打开专用投递流程，并在最终提交前停止。"
         )
 
 
 boss_adapter = BossAdapter()
+

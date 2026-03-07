@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ShieldCheck, UploadCloud } from "lucide-react";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
-import { splitCommaValues } from "../lib/utils";
+import { pillLabel, splitCommaValues } from "../lib/utils";
 
 export function SetupPage() {
   const queryClient = useQueryClient();
@@ -137,27 +137,25 @@ export function SetupPage() {
       <header className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
         <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
           <p className="text-xs uppercase tracking-[0.24em] text-slate">
-            Candidate profile
+            候选人画像
           </p>
           <h1 className="mt-3 font-display text-5xl italic text-ink">
-            Build the profile once, then drive every search from it.
+            先整理一份可靠画像，再驱动后续所有搜岗动作。
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-slate">
-            Upload a single PDF or DOCX resume, review the extracted intent, and
-            keep the structured profile tighter than the raw document.
+            上传一份 PDF 或 DOCX 简历，检查系统抽取出的求职意向、技能和偏好，再把结构化资料修到足够准确。
           </p>
         </section>
 
         <section className="rounded-[32px] border border-ember/20 bg-ember/10 p-6 shadow-console">
           <p className="text-xs uppercase tracking-[0.24em] text-ember">
-            Session hygiene
+            会话隔离
           </p>
           <p className="mt-3 font-display text-4xl italic text-ink">
-            Dedicated browser state only
+            仅使用专用浏览器状态
           </p>
           <p className="mt-4 text-sm leading-7 text-slate">
-            The app keeps a separate local session directory. It does not read
-            your normal browser profile or store your platform password.
+            应用会为招聘平台维护独立的本地会话目录，不读取你日常浏览器的主 Profile，也不会保存平台密码。
           </p>
           <button
             type="button"
@@ -165,14 +163,15 @@ export function SetupPage() {
             onClick={() => sessionMutation.mutate()}
           >
             <ShieldCheck size={16} />
-            {sessionMutation.isPending ? "Opening session..." : "Start Boss session"}
+            {sessionMutation.isPending ? "正在打开会话..." : "启动 Boss 专用会话"}
           </button>
           {bossSessionQuery.data ? (
             <p className="mt-3 text-sm text-ink/80">
-              Session status:{" "}
+              当前会话状态：
               <span className="font-semibold">
-                {bossSessionQuery.data.active ? "active" : "inactive"}
+                {bossSessionQuery.data.active ? " 已激活" : " 未激活"}
               </span>
+              <span className="ml-2 text-slate">({pillLabel("boss")})</span>
             </p>
           ) : null}
         </section>
@@ -181,15 +180,15 @@ export function SetupPage() {
       <section className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
         <div className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
           <p className="text-xs uppercase tracking-[0.24em] text-slate">
-            Resume intake
+            简历导入
           </p>
           <label className="mt-5 flex cursor-pointer flex-col items-center justify-center rounded-[28px] border border-dashed border-ink/20 bg-paper px-6 py-12 text-center transition hover:border-ink/40">
             <UploadCloud size={34} className="text-ink" />
             <p className="mt-4 font-medium text-ink">
-              Upload PDF or DOCX resume
+              上传 PDF 或 DOCX 简历
             </p>
             <p className="mt-2 text-sm text-slate">
-              Extraction is local-first. You can adjust every structured field afterwards.
+              解析以本地流程为主。你可以在导入后手动修正每一个结构化字段。
             </p>
             <input
               type="file"
@@ -199,17 +198,17 @@ export function SetupPage() {
             />
           </label>
           {uploadMutation.isPending ? (
-            <p className="mt-4 text-sm text-slate">Parsing resume...</p>
+            <p className="mt-4 text-sm text-slate">正在解析简历...</p>
           ) : null}
           {profileQuery.data?.source_filename ? (
             <p className="mt-4 text-sm text-slate">
-              Loaded from: {profileQuery.data.source_filename}
+              当前来源文件：{profileQuery.data.source_filename}
             </p>
           ) : null}
 
           <div className="mt-6 rounded-[24px] border border-ink/10 bg-paper p-4">
             <p className="text-xs uppercase tracking-[0.2em] text-slate">
-              Connected platforms
+              已接入平台
             </p>
             <div className="mt-3 space-y-3">
               {platformsQuery.data?.map((platform) => (
@@ -220,13 +219,11 @@ export function SetupPage() {
                   <div className="flex items-center justify-between">
                     <p className="font-semibold text-ink">{platform.label}</p>
                     <p className="text-xs uppercase tracking-[0.18em] text-slate">
-                      rules {platform.rule_pack_version}
+                      规则包 {platform.rule_pack_version}
                     </p>
                   </div>
                   <p className="mt-2 text-sm text-slate">
-                    Search: {String(platform.search_supported)} · Review:{" "}
-                    {String(platform.review_open_supported)} · Guided apply:{" "}
-                    {String(platform.guided_apply_supported)}
+                    搜索：{platform.search_supported ? "支持" : "不支持"} · 浏览：{platform.review_open_supported ? "支持" : "不支持"} · 引导投递：{platform.guided_apply_supported ? "支持" : "不支持"}
                   </p>
                 </div>
               ))}
@@ -237,16 +234,16 @@ export function SetupPage() {
         <div className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
           <div className="grid gap-5 md:grid-cols-2">
             {[
-              ["Full name", "full_name"],
-              ["Headline", "headline"],
-              ["Target roles", "target_roles"],
-              ["Preferred cities", "preferred_cities"],
-              ["Salary floor", "salary_floor"],
-              ["Years of experience", "years_experience"],
-              ["Degree", "degree"],
-              ["Skills", "skills"],
-              ["Must-have keywords", "must_have_keywords"],
-              ["Source language", "source_language"],
+              ["姓名", "full_name"],
+              ["岗位标题", "headline"],
+              ["目标岗位", "target_roles"],
+              ["期望城市", "preferred_cities"],
+              ["薪资下限", "salary_floor"],
+              ["工作年限", "years_experience"],
+              ["学历", "degree"],
+              ["技能关键词", "skills"],
+              ["必须命中关键词", "must_have_keywords"],
+              ["简历语言", "source_language"],
             ].map(([label, key]) => (
               <label key={key} className="space-y-2">
                 <span className="text-xs uppercase tracking-[0.2em] text-slate">
@@ -267,7 +264,7 @@ export function SetupPage() {
           </div>
           <label className="mt-5 block space-y-2">
             <span className="text-xs uppercase tracking-[0.2em] text-slate">
-              Summary
+              个人摘要
             </span>
             <textarea
               value={draft.summary}
@@ -287,7 +284,7 @@ export function SetupPage() {
             onClick={() => saveMutation.mutate()}
             disabled={saveMutation.isPending}
           >
-            {saveMutation.isPending ? "Saving profile..." : "Save profile"}
+            {saveMutation.isPending ? "正在保存画像..." : "保存画像"}
           </button>
         </div>
       </section>

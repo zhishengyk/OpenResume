@@ -27,7 +27,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(detail || "Request failed");
+    throw new Error(detail || "请求失败");
   }
 
   if (response.status === 204) {
@@ -121,4 +121,3 @@ export const api = {
       body: JSON.stringify({ active }),
     }),
 };
-

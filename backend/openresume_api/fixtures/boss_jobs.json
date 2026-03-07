@@ -11,8 +11,8 @@
     "degree_text": "本科",
     "work_mode": "hybrid",
     "url": "https://www.zhipin.com/job_detail/boss-001.html",
-    "jd_text": "负责 React、TypeScript、Node.js 中后台和 BFF 协作，要求良好的工程化能力、设计系统经验、Electron 加分。",
-    "tags": ["React", "TypeScript", "Node.js", "Electron", "Design System"]
+    "jd_text": "负责 React、TypeScript、Node.js 中后台和 BFF 协作，要求良好的工程化能力、设计系统经验，Electron 经验加分。",
+    "tags": ["React", "TypeScript", "Node.js", "Electron", "设计系统"]
   },
   {
     "id": "boss-002",
@@ -26,7 +26,7 @@
     "degree_text": "本科",
     "work_mode": "onsite",
     "url": "https://www.zhipin.com/job_detail/boss-002.html",
-    "jd_text": "负责 React、FastAPI、PostgreSQL、Docker 相关的产品交付，需要前后端一体化能力和 AI 工具经验。",
+    "jd_text": "负责 React、FastAPI、PostgreSQL、Docker 相关产品交付，需要前后端一体化能力和 AI 工具经验。",
     "tags": ["React", "FastAPI", "PostgreSQL", "Docker", "AI"]
   },
   {
@@ -42,7 +42,7 @@
     "work_mode": "hybrid",
     "url": "https://www.zhipin.com/job_detail/boss-003.html",
     "jd_text": "负责大型 React 平台架构、微前端、CI/CD、性能优化和团队治理，要求较强领导力。",
-    "tags": ["React", "Architecture", "Microfrontend", "CI/CD", "Leadership"]
+    "tags": ["React", "架构设计", "微前端", "CI/CD", "团队管理"]
   },
   {
     "id": "boss-004",
@@ -56,7 +56,7 @@
     "degree_text": "本科",
     "work_mode": "hybrid",
     "url": "https://www.zhipin.com/job_detail/boss-004.html",
-    "jd_text": "需要 Vue 和 TypeScript，B 端中后台经验，熟悉低代码平台优先。",
+    "jd_text": "需要 Vue 和 TypeScript，具备 B 端中后台经验，熟悉低代码平台优先。",
     "tags": ["Vue", "TypeScript", "B端", "低代码"]
   },
   {
@@ -71,7 +71,7 @@
     "degree_text": "本科",
     "work_mode": "remote",
     "url": "https://www.zhipin.com/job_detail/boss-005.html",
-    "jd_text": "围绕 AI 工作流构建 React 前端，配合 Python/FastAPI 服务，懂 prompt、流式渲染、Electron 有优势。",
+    "jd_text": "围绕 AI 工作流构建 React 前端，配合 Python/FastAPI 服务，懂 prompt、流式渲染，Electron 经验有优势。",
     "tags": ["React", "Python", "FastAPI", "Prompt", "Electron"]
   },
   {
@@ -87,7 +87,7 @@
     "work_mode": "onsite",
     "url": "https://www.zhipin.com/job_detail/boss-006.html",
     "jd_text": "偏活动页和营销落地，要求 React、Three.js、动画表现能力。",
-    "tags": ["React", "Three.js", "Animation"]
+    "tags": ["React", "Three.js", "动画"]
   },
   {
     "id": "boss-007",
@@ -101,7 +101,7 @@
     "degree_text": "本科",
     "work_mode": "hybrid",
     "url": "https://www.zhipin.com/job_detail/boss-007.html",
-    "jd_text": "React、Node.js、MySQL、Redis、Docker，全栈产品交付和工程稳定性。",
+    "jd_text": "需要 React、Node.js、MySQL、Redis、Docker，全栈产品交付和工程稳定性经验。",
     "tags": ["React", "Node.js", "MySQL", "Redis", "Docker"]
   },
   {
@@ -116,8 +116,8 @@
     "degree_text": "本科",
     "work_mode": "onsite",
     "url": "https://www.zhipin.com/job_detail/boss-008.html",
-    "jd_text": "要求 React、TypeScript、表格性能优化、设计系统、带 3-5 人团队经验。",
-    "tags": ["React", "TypeScript", "Performance", "Design System", "Leadership"]
+    "jd_text": "要求 React、TypeScript、表格性能优化、设计系统，以及 3-5 人团队管理经验。",
+    "tags": ["React", "TypeScript", "性能优化", "设计系统", "团队管理"]
   },
   {
     "id": "boss-009",
@@ -131,7 +131,7 @@
     "degree_text": "本科",
     "work_mode": "hybrid",
     "url": "https://www.zhipin.com/job_detail/boss-009.html",
-    "jd_text": "偏后端和 API 平台开发，Node.js、MySQL、Redis、消息队列，前端经验是加分项。",
+    "jd_text": "偏后端和 API 平台开发，需要 Node.js、MySQL、Redis、消息队列经验，前端经验为加分项。",
     "tags": ["Node.js", "MySQL", "Redis", "API"]
   },
   {
@@ -147,7 +147,7 @@
     "work_mode": "remote",
     "url": "https://www.zhipin.com/job_detail/boss-010.html",
     "jd_text": "需要 React、TypeScript、协同编辑、WebSocket、性能优化经验，熟悉 AI Copilot 产品优先。",
-    "tags": ["React", "TypeScript", "WebSocket", "Performance", "AI"]
+    "tags": ["React", "TypeScript", "WebSocket", "性能优化", "AI"]
   },
   {
     "id": "boss-011",
@@ -161,8 +161,8 @@
     "degree_text": "本科",
     "work_mode": "hybrid",
     "url": "https://www.zhipin.com/job_detail/boss-011.html",
-    "jd_text": "Electron、React、TypeScript、自动化测试、CI/CD，面向桌面效率工具。",
-    "tags": ["Electron", "React", "TypeScript", "Testing", "CI/CD"]
+    "jd_text": "需要 Electron、React、TypeScript、自动化测试、CI/CD 经验，面向桌面效率工具。",
+    "tags": ["Electron", "React", "TypeScript", "自动化测试", "CI/CD"]
   },
   {
     "id": "boss-012",
@@ -176,8 +176,7 @@
     "degree_text": "本科",
     "work_mode": "remote",
     "url": "https://www.zhipin.com/job_detail/boss-012.html",
-    "jd_text": "React、Next.js、Python、LLM 工具链，负责智能工作台、流式交互和 Prompt 管理。",
+    "jd_text": "需要 React、Next.js、Python、LLM 工具链经验，负责智能工作台、流式交互和 Prompt 管理。",
     "tags": ["React", "Next.js", "Python", "LLM", "Prompt"]
   }
 ]
-

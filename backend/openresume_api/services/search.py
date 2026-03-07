@@ -16,7 +16,11 @@ from .platform_gateway import platform_gateway
 
 
 class SearchService:
-    async def create_session(self, db: Session, payload: SearchSessionCreate) -> SearchSession:
+    async def create_session(
+        self,
+        db: Session,
+        payload: SearchSessionCreate,
+    ) -> SearchSession:
         session = SearchSession(
             platform=payload.platform,
             mode=payload.mode,
@@ -25,12 +29,12 @@ class SearchService:
             cities=payload.cities,
             salary_floor=payload.salary_floor,
             must_have_keywords=payload.must_have_keywords,
-            summary="Pipeline started. Rule filtering lands first, then cached or fresh LLM commentary follows.",
+            summary="搜索任务已启动。系统会先返回规则筛选结果，再补充缓存或新生成的模型说明。",
         )
         db.add(session)
         db.commit()
         db.refresh(session)
-        event_bus.publish(session.id, "search_started", "Search session created.")
+        event_bus.publish(session.id, "search_started", "搜索任务已创建。")
         asyncio.create_task(self._run_pipeline(session.id, payload))
         return session
 
@@ -42,7 +46,11 @@ class SearchService:
             profile = db.get(CandidateProfile, 1) or CandidateProfile(id=1)
             adapter = platform_gateway.get(payload.platform)
 
-            event_bus.publish(session_id, "fetching_jobs", "Fetching jobs from platform fixture and applying conservative pacing.")
+            event_bus.publish(
+                session_id,
+                "fetching_jobs",
+                "正在抓取职位并按保守节流策略处理平台请求。",
+            )
             raw_jobs = await adapter.search_jobs(payload, profile)
             rule_matches = matching_service.filter_and_score(
                 profile=profile,
@@ -100,7 +108,7 @@ class SearchService:
             event_bus.publish(
                 session_id,
                 "rule_ranked",
-                f"Rule filtering completed with {len(stored_jobs)} visible matches.",
+                f"规则筛选完成，当前可见岗位 {len(stored_jobs)} 个。",
                 {"matches": len(stored_jobs)},
             )
 
@@ -109,7 +117,11 @@ class SearchService:
             llm_by_key = {result.cache_key: result for result in llm_results}
 
             for job in top_jobs:
-                cache_key = llm_service.provider.cache_key(job.platform, job.external_job_id, job.jd_hash)
+                cache_key = llm_service.provider.cache_key(
+                    job.platform,
+                    job.external_job_id,
+                    job.jd_hash,
+                )
                 llm_result = llm_by_key.get(cache_key)
                 if not llm_result:
                     continue
@@ -123,10 +135,21 @@ class SearchService:
                     continue
 
                 match.llm_score = llm_result.llm_score
-                match.final_score = round(match.rule_score * 0.6 + llm_result.llm_score * 0.4, 2)
-                match.highlights = list(dict.fromkeys(match.highlights + llm_result.highlights))
-                match.missing_keywords = list(dict.fromkeys(match.missing_keywords + llm_result.missing_keywords))
-                match.risk_flags = list(dict.fromkeys(match.risk_flags + llm_result.risk_flags))
+                match.final_score = round(
+                    match.rule_score * 0.6 + llm_result.llm_score * 0.4,
+                    2,
+                )
+                match.highlights = list(
+                    dict.fromkeys(match.highlights + llm_result.highlights)
+                )
+                match.missing_keywords = list(
+                    dict.fromkeys(
+                        match.missing_keywords + llm_result.missing_keywords
+                    )
+                )
+                match.risk_flags = list(
+                    dict.fromkeys(match.risk_flags + llm_result.risk_flags)
+                )
                 match.llm_summary = llm_result.llm_summary
                 match.cached_llm = llm_result.cached
                 match.updated_at = datetime.utcnow()
@@ -140,10 +163,11 @@ class SearchService:
             event_bus.publish(
                 session_id,
                 "llm_enriched",
-                f"LLM commentary refreshed for top {len(top_jobs)} matches.",
+                f"模型说明已补充到前 {len(top_jobs)} 个岗位。",
                 {"matches": len(top_jobs)},
             )
-            event_bus.publish(session_id, "ready", "Search session ready for review.")
+            event_bus.publish(session_id, "ready", "搜索任务已完成，可开始查看结果。")
 
 
 search_service = SearchService()
+

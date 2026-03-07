@@ -3,10 +3,10 @@ import { NavLink } from "react-router-dom";
 import { cn } from "../lib/utils";
 
 const items = [
-  { to: "/", label: "Setup", icon: Settings2 },
-  { to: "/search", label: "Search", icon: FolderSearch2 },
-  { to: "/results", label: "Results", icon: AlertTriangle },
-  { to: "/history", label: "History", icon: History },
+  { to: "/", label: "\u8d44\u6599\u8bbe\u7f6e", icon: Settings2 },
+  { to: "/search", label: "\u641c\u7d22\u4efb\u52a1", icon: FolderSearch2 },
+  { to: "/results", label: "\u7ed3\u679c\u9762\u677f", icon: AlertTriangle },
+  { to: "/history", label: "\u5386\u53f2\u8bb0\u5f55", icon: History },
 ];
 
 export function Sidebar() {
@@ -17,8 +17,7 @@ export function Sidebar() {
         <div>
           <p className="font-display text-4xl italic text-ink">OpenResume</p>
           <p className="mt-2 max-w-[16rem] text-sm leading-6 text-slate">
-            Resume-first job scouting with explicit risk controls and user-held
-            submission authority.
+            {"\u7b80\u5386\u9a71\u52a8\u641c\u5c97\u4e0e\u5f15\u5bfc\u6295\u9012"}
           </p>
         </div>
 
@@ -47,11 +46,12 @@ export function Sidebar() {
 
         <div className="mt-auto rounded-3xl border border-ember/20 bg-ember/10 p-4 text-sm text-ink/80">
           <p className="font-semibold uppercase tracking-[0.18em] text-ember">
-            Safety line
+            {"\u5b89\u5168\u8fb9\u754c"}
           </p>
           <p className="mt-2 leading-6">
-            This build never auto-submits applications. Guided actions stop at
-            the final user-controlled step.
+            {
+              "\u5f53\u524d\u7248\u672c\u7edd\u4e0d\u81ea\u52a8\u63d0\u4ea4\u7b80\u5386\u3002\u6240\u6709\u5f15\u5bfc\u52a8\u4f5c\u90fd\u4f1a\u5728\u6700\u7ec8\u63d0\u4ea4\u524d\u505c\u4e0b\u3002"
+            }
           </p>
         </div>
       </div>

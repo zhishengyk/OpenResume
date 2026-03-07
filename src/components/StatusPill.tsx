@@ -1,4 +1,4 @@
-import { cn, statusTone } from "../lib/utils";
+import { cn, pillLabel, statusTone } from "../lib/utils";
 
 interface StatusPillProps {
   children: string;
@@ -14,8 +14,7 @@ export function StatusPill({ children, className }: StatusPillProps) {
         className,
       )}
     >
-      {children.replaceAll("_", " ")}
+      {pillLabel(children.replaceAll("_", " "))}
     </span>
   );
 }
-

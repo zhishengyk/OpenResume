@@ -17,7 +17,7 @@ class LiepinAdapter:
             detail_parse_supported=False,
             review_open_supported=False,
             guided_apply_supported=False,
-            rule_pack_version="planned",
+            rule_pack_version="计划中",
         )
 
     async def start_session(self, db: Session) -> None:
@@ -37,4 +37,3 @@ class LiepinAdapter:
 
 
 liepin_adapter = LiepinAdapter()
-

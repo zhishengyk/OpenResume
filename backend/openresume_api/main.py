@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import datetime
 import json
-from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
@@ -45,7 +45,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="OpenResume Local API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="OpenResume 本地接口", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -53,6 +53,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 @app.get("/health")
 def healthcheck() -> dict:
@@ -159,9 +160,13 @@ async def start_platform_session(platform: str, db: SessionDep):
     return PlatformSessionResponse(
         platform=platform,
         active=state["active"],
-        last_started_at=datetime.fromisoformat(state["last_started_at"]) if state["last_started_at"] else None,
+        last_started_at=(
+            datetime.fromisoformat(state["last_started_at"])
+            if state["last_started_at"]
+            else None
+        ),
         storage_dir=state["storage_dir"],
-        recommended_account_notice="Use a dedicated platform session or backup account for guided flows.",
+        recommended_account_notice="建议使用独立账号或独立会话目录进行引导投递。",
     )
 
 
@@ -171,9 +176,13 @@ async def get_platform_session(platform: str, db: SessionDep):
     return PlatformSessionResponse(
         platform=platform,
         active=state["active"],
-        last_started_at=datetime.fromisoformat(state["last_started_at"]) if state["last_started_at"] else None,
+        last_started_at=(
+            datetime.fromisoformat(state["last_started_at"])
+            if state["last_started_at"]
+            else None
+        ),
         storage_dir=state["storage_dir"],
-        recommended_account_notice="Use a dedicated platform session or backup account for guided flows.",
+        recommended_account_notice="建议使用独立账号或独立会话目录进行引导投递。",
     )
 
 
@@ -187,15 +196,20 @@ async def create_search_session(payload: SearchSessionCreate, db: SessionDep):
     adapter = platform_gateway.get(payload.platform)
     capability = adapter.capability()
     if not capability.search_supported:
-        raise HTTPException(status_code=409, detail="Platform search is not available.")
-    if payload.mode == "guided_apply" and not compliance_service.has_guided_apply_consent(db, payload.platform):
-        raise HTTPException(status_code=403, detail="Guided apply consent is required.")
+        raise HTTPException(status_code=409, detail="当前平台暂不支持搜索能力。")
+    if (
+        payload.mode == "guided_apply"
+        and not compliance_service.has_guided_apply_consent(db, payload.platform)
+    ):
+        raise HTTPException(status_code=403, detail="请先完成引导投递风险确认。")
     return await search_service.create_session(db, payload)
 
 
 @app.get("/api/search-sessions")
 def list_search_sessions(db: SessionDep):
-    sessions = db.exec(select(SearchSession).order_by(SearchSession.created_at.desc())).all()
+    sessions = db.exec(
+        select(SearchSession).order_by(SearchSession.created_at.desc())
+    ).all()
     return sessions
 
 
@@ -203,14 +217,16 @@ def list_search_sessions(db: SessionDep):
 def get_search_session(session_id: str, db: SessionDep):
     session = db.get(SearchSession, session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Search session not found.")
+        raise HTTPException(status_code=404, detail="搜索任务不存在。")
     return session
 
 
 @app.get("/api/search-sessions/{session_id}/matches", response_model=list[JobMatchResponse])
 def get_search_matches(session_id: str, db: SessionDep):
     matches = db.exec(
-        select(JobMatch).where(JobMatch.session_id == session_id).order_by(JobMatch.final_score.desc())
+        select(JobMatch)
+        .where(JobMatch.session_id == session_id)
+        .order_by(JobMatch.final_score.desc())
     ).all()
     jobs = {
         job.id: job
@@ -218,14 +234,18 @@ def get_search_matches(session_id: str, db: SessionDep):
             select(JobListing).where(JobListing.session_id == session_id)
         ).all()
     }
-    return [match_response(match, jobs[match.job_id]) for match in matches if match.job_id in jobs]
+    return [
+        match_response(match, jobs[match.job_id])
+        for match in matches
+        if match.job_id in jobs
+    ]
 
 
 @app.get("/api/search-sessions/{session_id}/events")
 async def stream_search_events(session_id: str):
     async def event_generator():
         async for event in event_bus.stream(session_id):
-            yield f"data: {json.dumps(event)}\n\n"
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -234,7 +254,7 @@ async def stream_search_events(session_id: str):
 async def open_review(job_id: str, db: SessionDep):
     job = db.get(JobListing, job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found.")
+        raise HTTPException(status_code=404, detail="职位不存在。")
     adapter = platform_gateway.get(job.platform)
     message = await adapter.open_review(job.url)
     return {"message": message}
@@ -244,9 +264,9 @@ async def open_review(job_id: str, db: SessionDep):
 async def guided_apply(job_id: str, db: SessionDep):
     job = db.get(JobListing, job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found.")
+        raise HTTPException(status_code=404, detail="职位不存在。")
     if not compliance_service.has_guided_apply_consent(db, job.platform):
-        raise HTTPException(status_code=403, detail="Guided apply consent is required.")
+        raise HTTPException(status_code=403, detail="请先完成引导投递风险确认。")
 
     risk_control_service.ensure_guided_apply_allowed(db, job.platform)
     profile = profile_service.load_or_create(db)
@@ -257,7 +277,7 @@ async def guided_apply(job_id: str, db: SessionDep):
         platform=job.platform,
         mode="guided_apply",
         status="running",
-        message="Preparing dedicated session and stopping before final submit.",
+        message="正在准备专用投递流程，并会在最终提交前停止。",
     )
     db.add(attempt)
     db.commit()
@@ -292,10 +312,10 @@ def list_application_attempts(db: SessionDep):
 def cancel_application_attempt(attempt_id: str, db: SessionDep):
     attempt = db.get(ApplicationAttempt, attempt_id)
     if not attempt:
-        raise HTTPException(status_code=404, detail="Application attempt not found.")
+        raise HTTPException(status_code=404, detail="投递记录不存在。")
     attempt.status = "cancelled"
     attempt.updated_at = datetime.utcnow()
-    attempt.message = "Cancelled by user."
+    attempt.message = "已由用户取消。"
     db.add(attempt)
     db.commit()
     db.refresh(attempt)
@@ -305,3 +325,4 @@ def cancel_application_attempt(attempt_id: str, db: SessionDep):
 @app.post("/api/emergency-stop")
 def set_emergency_stop(payload: EmergencyStopRequest, db: SessionDep):
     return risk_control_service.set_emergency_stop(db, payload.active)
+

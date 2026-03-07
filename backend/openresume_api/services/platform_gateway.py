@@ -19,9 +19,11 @@ class PlatformGateway:
     def get(self, platform: str):
         adapter = self.adapters.get(platform)
         if not adapter:
-            raise HTTPException(status_code=404, detail=f"Unsupported platform: {platform}")
+            raise HTTPException(
+                status_code=404,
+                detail=f"不支持的平台：{platform}",
+            )
         return adapter
 
 
 platform_gateway = PlatformGateway()
-

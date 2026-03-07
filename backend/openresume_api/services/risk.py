@@ -45,7 +45,9 @@ class RiskControlService:
 
         return {
             "platform": platform,
-            "emergency_stop_active": bool(emergency_stop and emergency_stop.value.get("active")),
+            "emergency_stop_active": bool(
+                emergency_stop and emergency_stop.value.get("active")
+            ),
             "cooldown_until": cooldown_until,
             "remaining_hourly": max(0, self.hourly_limit - len(hourly_attempts)),
             "remaining_daily": max(0, self.daily_limit - len(daily_attempts)),
@@ -61,7 +63,13 @@ class RiskControlService:
         db.commit()
         return {"active": active}
 
-    def record_risk_event(self, db: Session, platform: str, event_type: str, detail: str) -> RiskEvent:
+    def record_risk_event(
+        self,
+        db: Session,
+        platform: str,
+        event_type: str,
+        detail: str,
+    ) -> RiskEvent:
         event = RiskEvent(platform=platform, event_type=event_type, detail=detail)
         db.add(event)
         db.commit()
@@ -81,7 +89,7 @@ class RiskControlService:
             )
             pause_setting.value = {
                 "until": (datetime.utcnow() + self.pause_window).isoformat(),
-                "reason": "Repeated risk events",
+                "reason": "连续命中风险页",
             }
             db.add(pause_setting)
             db.commit()
@@ -90,17 +98,17 @@ class RiskControlService:
     def ensure_guided_apply_allowed(self, db: Session, platform: str) -> None:
         status = self.current_status(db, platform)
         if status["emergency_stop_active"]:
-            raise HTTPException(status_code=409, detail="Emergency stop is active.")
+            raise HTTPException(status_code=409, detail="当前已启用紧急停止。")
         cooldown_until = status["cooldown_until"]
         if cooldown_until and cooldown_until > datetime.utcnow():
             raise HTTPException(
                 status_code=429,
-                detail=f"Platform is in cooldown until {cooldown_until.isoformat()}",
+                detail=f"平台冷却中，结束时间：{cooldown_until.isoformat()}",
             )
         if status["remaining_hourly"] <= 0:
-            raise HTTPException(status_code=429, detail="Hourly guided-apply limit reached.")
+            raise HTTPException(status_code=429, detail="已达到每小时引导投递上限。")
         if status["remaining_daily"] <= 0:
-            raise HTTPException(status_code=429, detail="Daily guided-apply limit reached.")
+            raise HTTPException(status_code=429, detail="已达到每日引导投递上限。")
 
 
 risk_control_service = RiskControlService()

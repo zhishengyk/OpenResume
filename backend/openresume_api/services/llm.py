@@ -21,13 +21,18 @@ class LLMResult:
 
 
 class HeuristicLLMProvider:
-    async def analyze(self, profile: CandidateProfile, jobs: Iterable[JobListing]) -> list[LLMResult]:
+    async def analyze(
+        self,
+        profile: CandidateProfile,
+        jobs: Iterable[JobListing],
+    ) -> list[LLMResult]:
         results: list[LLMResult] = []
-        candidate_keywords = {skill.lower() for skill in profile.skills + profile.must_have_keywords}
+        candidate_keywords = {
+            skill.lower() for skill in profile.skills + profile.must_have_keywords
+        }
         target_roles = {role.lower() for role in profile.target_roles}
 
         for job in jobs:
-            job_terms = set(job.jd_text.lower().replace("、", ",").replace("，", ",").split())
             overlap = sorted(
                 {
                     skill
@@ -42,19 +47,21 @@ class HeuristicLLMProvider:
                     if keyword.lower() not in job.jd_text.lower()
                 }
             )
-            role_bonus = 8 if any(role in job.title.lower() for role in target_roles) else 0
+            role_bonus = (
+                8 if any(role in job.title.lower() for role in target_roles) else 0
+            )
             score = min(100.0, 55.0 + len(overlap) * 7 + role_bonus - len(missing) * 4)
             risk_flags = []
             if job.salary_min and profile.salary_floor and job.salary_min < profile.salary_floor:
-                risk_flags.append("salary below floor")
+                risk_flags.append("薪资低于预期")
             if "leader" in job.jd_text.lower() or "带团队" in job.jd_text:
-                risk_flags.append("leadership required")
+                risk_flags.append("包含团队管理要求")
             if "onsite" in job.work_mode.lower():
-                risk_flags.append("onsite")
+                risk_flags.append("偏向线下坐班")
 
             summary = (
-                f"Strong overlap on {', '.join(overlap[:4]) or 'core engineering skills'}; "
-                f"watch {', '.join((missing + risk_flags)[:3]) or 'no immediate blockers'}."
+                f"核心匹配点集中在 {', '.join(overlap[:4]) or '基础工程能力'}；"
+                f"需要留意 {', '.join((missing + risk_flags)[:3]) or '当前未发现明显硬伤'}。"
             )
 
             results.append(
@@ -88,13 +95,11 @@ class LLMService:
     ) -> list[LLMResult]:
         fresh_jobs: list[JobListing] = []
         results: list[LLMResult] = []
-        cached_by_key: dict[str, LLMAnalysisCache] = {}
 
         for job in jobs:
             key = self.provider.cache_key(job.platform, job.external_job_id, job.jd_hash)
             cached = db.get(LLMAnalysisCache, key)
             if cached:
-                cached_by_key[key] = cached
                 results.append(
                     LLMResult(
                         cache_key=key,
@@ -131,3 +136,4 @@ class LLMService:
 
 
 llm_service = LLMService()
+

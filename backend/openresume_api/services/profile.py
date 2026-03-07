@@ -60,7 +60,10 @@ def _extract_first_line(lines: Iterable[str]) -> str:
 
 
 def _extract_roles(text: str) -> list[str]:
-    matches = re.findall(r"(前端工程师|全栈工程师|后端工程师|产品经理|测试工程师|算法工程师)", text)
+    matches = re.findall(
+        r"(前端工程师|全栈工程师|后端工程师|产品经理|测试工程师|算法工程师)",
+        text,
+    )
     unique = list(dict.fromkeys(matches))
     return unique[:3] or ["前端工程师", "全栈工程师"]
 
@@ -95,7 +98,7 @@ class ProfileService:
         elif extension == ".docx":
             raw_text = _read_docx(output_path)
         else:
-            raise ValueError("Only PDF and DOCX resume files are supported.")
+            raise ValueError("当前仅支持 PDF 和 DOCX 简历文件。")
 
         lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
         name = _extract_first_line(lines)
@@ -111,7 +114,7 @@ class ProfileService:
             summary=summary,
             target_roles=roles,
             preferred_cities=cities,
-            salary_floor=25000 if "高级" in raw_text else 18000,
+            salary_floor=25000 if "高级" in raw_text or "资深" in raw_text else 18000,
             years_experience=5 if "5年" in raw_text or "五年" in raw_text else 3,
             degree="本科" if "本科" in raw_text else "",
             skills=skills,
@@ -135,3 +138,4 @@ class ProfileService:
 
 
 profile_service = ProfileService()
+

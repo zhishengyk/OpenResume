@@ -6,15 +6,14 @@ const bundlePath = path.join(__dirname, "..", "backend", "dist", "openresume-api
 if (!fs.existsSync(bundlePath)) {
   console.error(
     [
-      "Missing backend executable bundle.",
-      "Build it before packaging the desktop app.",
+      "缺少后端可执行文件。",
+      "请先打包后端，再执行桌面端打包。",
       "",
-      "Suggested command:",
+      "建议执行：",
       "  cd backend",
-      "  pip install -e .[packaging]",
+      "  python -m pip install -e .[packaging]",
       "  pyinstaller --onefile --name openresume-api openresume_api/__main__.py",
     ].join("\n"),
   );
   process.exit(1);
 }
-
