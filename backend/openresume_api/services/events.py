@@ -25,6 +25,9 @@ class EventBus:
     def history(self, session_id: str) -> list[dict]:
         return self._history[session_id]
 
+    def reset(self, session_id: str) -> None:
+        self._history[session_id].clear()
+
     async def stream(self, session_id: str):
         queue: asyncio.Queue = asyncio.Queue()
         self._subscribers[session_id].append(queue)

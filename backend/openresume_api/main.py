@@ -42,7 +42,10 @@ SessionDep = Annotated[Session, Depends(get_session)]
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
-    yield
+    try:
+        yield
+    finally:
+        await browser_session_service.shutdown()
 
 
 app = FastAPI(title="OpenResume 本地接口", version="0.1.0", lifespan=lifespan)
@@ -217,8 +220,18 @@ def list_search_sessions(db: SessionDep):
 def get_search_session(session_id: str, db: SessionDep):
     session = db.get(SearchSession, session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="搜索任务不存在。")
+        raise HTTPException(status_code=404, detail="\u641c\u7d22\u4efb\u52a1\u4e0d\u5b58\u5728\u3002")
     return session
+
+
+@app.post("/api/search-sessions/{session_id}/retry")
+async def retry_search_session(session_id: str, db: SessionDep):
+    return await search_service.retry_session(db, session_id)
+
+
+@app.post("/api/search-sessions/{session_id}/open-verification")
+async def open_search_verification(session_id: str, db: SessionDep):
+    return await search_service.reopen_verification(db, session_id)
 
 
 @app.get("/api/search-sessions/{session_id}/matches", response_model=list[JobMatchResponse])
@@ -325,4 +338,3 @@ def cancel_application_attempt(attempt_id: str, db: SessionDep):
 @app.post("/api/emergency-stop")
 def set_emergency_stop(payload: EmergencyStopRequest, db: SessionDep):
     return risk_control_service.set_emergency_stop(db, payload.active)
-

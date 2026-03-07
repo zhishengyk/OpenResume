@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable
+from datetime import datetime, timedelta
 import hashlib
 import json
+from pathlib import Path
 import random
 import re
 from typing import Any
-from urllib.parse import urljoin
-import webbrowser
-
-import httpx
+from urllib.parse import urlencode, urljoin
 from sqlmodel import Session
 
 from ..adapters.base import (
@@ -31,39 +30,41 @@ class BossAdapter:
     search_page_url = f"{base_url}/web/geek/job"
 
     city_codes = {
-        "北京": "101010100",
-        "上海": "101020100",
-        "广州": "101280100",
-        "深圳": "101280600",
-        "杭州": "101210100",
-        "苏州": "101190400",
-        "南京": "101190100",
-        "成都": "101270100",
-        "武汉": "101200100",
-        "西安": "101110100",
-        "重庆": "101040100",
-        "天津": "101030100",
-        "长沙": "101250100",
-        "郑州": "101180100",
-        "合肥": "101220100",
-        "厦门": "101230200",
-        "福州": "101230100",
-        "青岛": "101120200",
-        "济南": "101120100",
-        "宁波": "101210400",
-        "东莞": "101281600",
-        "佛山": "101280800",
-        "珠海": "101280700",
+        "\u5317\u4eac": "101010100",
+        "\u4e0a\u6d77": "101020100",
+        "\u5e7f\u5dde": "101280100",
+        "\u6df1\u5733": "101280600",
+        "\u676d\u5dde": "101210100",
+        "\u82cf\u5dde": "101190400",
+        "\u5357\u4eac": "101190100",
+        "\u6210\u90fd": "101270100",
+        "\u6b66\u6c49": "101200100",
+        "\u897f\u5b89": "101110100",
+        "\u91cd\u5e86": "101040100",
+        "\u5929\u6d25": "101030100",
+        "\u957f\u6c99": "101250100",
+        "\u90d1\u5dde": "101180100",
+        "\u5408\u80a5": "101220100",
+        "\u53a6\u95e8": "101230200",
+        "\u798f\u5dde": "101230100",
+        "\u9752\u5c9b": "101120200",
+        "\u6d4e\u5357": "101120100",
+        "\u5b81\u6ce2": "101210400",
+        "\u4e1c\u839e": "101281600",
+        "\u4f5b\u5c71": "101280800",
+        "\u73e0\u6d77": "101280700",
     }
 
     def __init__(self) -> None:
         fixtures_path = ROOT_DIR / "openresume_api" / "fixtures" / "boss_jobs.json"
         self.fixture_jobs = json.loads(fixtures_path.read_text(encoding="utf-8"))
+        self.search_cache_dir = settings.cache_dir / "boss-search"
+        self.search_cache_dir.mkdir(parents=True, exist_ok=True)
 
     def capability(self) -> PlatformCapabilityResponse:
         return PlatformCapabilityResponse(
             platform=self.platform,
-            label="Boss 直聘",
+            label="Boss \u76f4\u8058",
             search_supported=True,
             detail_parse_supported=True,
             review_open_supported=True,
@@ -72,7 +73,7 @@ class BossAdapter:
         )
 
     async def start_session(self, db: Session) -> None:
-        browser_session_service.start(
+        await browser_session_service.start(
             db,
             self.platform,
             "https://www.zhipin.com/web/user/",
@@ -91,10 +92,26 @@ class BossAdapter:
             return await self._search_fixture_jobs(search, profile)
         if mode != "live":
             raise PlatformDataError(
-                f"无效的 Boss 搜索模式：{settings.boss_search_mode}"
+                f"\u65e0\u6548\u7684 Boss \u641c\u7d22\u6a21\u5f0f\uff1a{settings.boss_search_mode}"
             )
 
         return await self._search_live_jobs(search, profile)
+
+    async def ensure_search_ready(self) -> None:
+        if settings.boss_search_mode.lower().strip() != "live":
+            return
+        page_url = self._build_page_url({"query": "python"})
+        response_bundle = await browser_session_service.fetch_json_with_session(
+            self.platform,
+            page_url=page_url,
+            api_url=settings.boss_search_api_url,
+            form_data={"query": "python", "page": "1", "pageSize": "1"},
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+        )
+        self._assert_not_blocked(response_bundle, verification_url=page_url)
 
     async def _search_fixture_jobs(
         self,
@@ -153,59 +170,61 @@ class BossAdapter:
         query_terms = self._candidate_queries(search, profile)
         city_targets = self._candidate_cities(search, profile)
         if not query_terms:
-            raise PlatformDataError("Boss 搜索需要至少一个岗位关键词。")
-
-        client_headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-            ),
-            "Accept": "application/json, text/plain, */*",
-            "Origin": self.base_url,
-        }
+            raise PlatformDataError(
+                "Boss \u641c\u7d22\u9700\u8981\u81f3\u5c11\u4e00\u4e2a\u5c97\u4f4d\u5173\u952e\u8bcd\u3002"
+            )
 
         results: list[NormalizedJobDraft] = []
         seen_job_ids: set[str] = set()
         combinations = 0
 
-        async with httpx.AsyncClient(
-            headers=client_headers,
-            follow_redirects=True,
-            timeout=20.0,
-        ) as client:
-            for query in query_terms:
-                for city_name, city_code in city_targets:
-                    combinations += 1
-                    if combinations > settings.boss_search_max_queries:
-                        break
+        for query in query_terms:
+            for city_name, city_code in city_targets:
+                combinations += 1
+                if combinations > settings.boss_search_max_queries:
+                    break
 
-                    await asyncio.sleep(random.uniform(0.6, 1.2))
+                cached_jobs = self._load_cached_jobs(query=query, city_code=city_code)
+                if cached_jobs is not None:
+                    drafts = cached_jobs
+                else:
+                    await self._throttle_live_search()
                     response_payload = await self._fetch_live_joblist(
-                        client=client,
                         query=query,
                         city_code=city_code,
                     )
-                    for item in self._extract_job_items(response_payload):
-                        draft = self._normalize_live_job(
+                    drafts = [
+                        self._normalize_live_job(
                             item=item,
                             fallback_city=city_name,
                             query=query,
                         )
-                        if draft.external_job_id in seen_job_ids:
-                            continue
-                        seen_job_ids.add(draft.external_job_id)
-                        results.append(draft)
-                if combinations > settings.boss_search_max_queries:
-                    break
+                        for item in self._extract_job_items(response_payload)
+                    ]
+                    if drafts:
+                        self._save_cached_jobs(
+                            query=query,
+                            city_code=city_code,
+                            drafts=drafts,
+                        )
+
+                for draft in drafts:
+                    if draft.external_job_id in seen_job_ids:
+                        continue
+                    seen_job_ids.add(draft.external_job_id)
+                    results.append(draft)
+            if combinations > settings.boss_search_max_queries:
+                break
 
         if not results:
-            raise PlatformDataError("Boss 直聘未返回可解析的职位结果。")
+            raise PlatformDataError(
+                "Boss \u76f4\u8058\u672a\u8fd4\u56de\u53ef\u89e3\u6790\u7684\u804c\u4f4d\u7ed3\u679c\u3002"
+            )
 
         return results
 
     async def _fetch_live_joblist(
         self,
-        client: httpx.AsyncClient,
         query: str,
         city_code: str | None,
     ) -> dict[str, Any]:
@@ -213,18 +232,7 @@ class BossAdapter:
         if city_code:
             page_params["city"] = city_code
 
-        page_response = await client.get(
-            self.search_page_url,
-            params=page_params,
-            headers={"Referer": self.base_url},
-        )
-        page_text = page_response.text
-        if self._looks_like_verify(page_response.url, page_text):
-            raise PlatformBlockedError(
-                "Boss 直聘要求安全验证，请先在浏览器里完成验证后再重试搜索。"
-            )
-
-        referer = str(page_response.url)
+        page_url = self._build_page_url(page_params)
         form_data = {
             "query": query,
             "page": "1",
@@ -233,31 +241,45 @@ class BossAdapter:
         if city_code:
             form_data["city"] = city_code
 
-        api_response = await client.post(
-            settings.boss_search_api_url,
-            data=form_data,
+        response_bundle = await browser_session_service.fetch_json_with_session(
+            self.platform,
+            page_url=page_url,
+            api_url=settings.boss_search_api_url,
+            form_data=form_data,
             headers={
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "Referer": referer,
                 "X-Requested-With": "XMLHttpRequest",
             },
         )
-        payload = api_response.json()
+        self._assert_not_blocked(response_bundle, verification_url=page_url)
+
+        page_url_after_nav = str(response_bundle["page_url"])
+        response_text = str(response_bundle["response_text"])
+
+        try:
+            payload = json.loads(response_text)
+        except json.JSONDecodeError as error:
+            raise PlatformBlockedError(
+                "Boss \u76f4\u8058\u8fd4\u56de\u4e86\u975e JSON \u9a8c\u8bc1\u9875\u9762\uff0c\u8bf7\u5148\u5728\u4f1a\u8bdd\u6d4f\u89c8\u5668\u4e2d\u5b8c\u6210\u9a8c\u8bc1\u540e\u518d\u91cd\u8bd5\u3002",
+                verification_url=page_url_after_nav,
+            ) from error
         code = payload.get("code")
-        if code == 35:
+        if code in {35, 37}:
             raise PlatformBlockedError(
                 payload.get("message")
-                or "Boss 直聘返回安全验证，当前搜索已被平台阻止。"
+                or "Boss \u76f4\u8058\u8fd4\u56de\u5b89\u5168\u9a8c\u8bc1\uff0c\u5f53\u524d\u641c\u7d22\u5df2\u88ab\u5e73\u53f0\u963b\u6b62\u3002",
+                verification_url=page_url_after_nav,
             )
         if code != 0:
             raise PlatformDataError(
-                payload.get("message") or f"Boss 搜索接口返回异常 code={code}"
+                payload.get("message")
+                or f"Boss \u641c\u7d22\u63a5\u53e3\u8fd4\u56de\u5f02\u5e38 code={code}"
             )
 
         return payload
 
     @staticmethod
-    def _looks_like_verify(url: httpx.URL, text: str) -> bool:
+    def _looks_like_verify(url: str, text: str) -> bool:
         lowered_url = str(url).lower()
         lowered_text = text.lower()
         return any(
@@ -265,10 +287,33 @@ class BossAdapter:
             for marker in [
                 "/verify.html",
                 "security-check",
-                "安全验证",
-                "请稍候",
+                "\u5b89\u5168\u9a8c\u8bc1",
+                "\u8bf7\u7a0d\u5019",
             ]
         )
+
+    def _assert_not_blocked(
+        self,
+        response_bundle: dict[str, Any],
+        *,
+        verification_url: str,
+    ) -> None:
+        page_url = str(response_bundle.get("page_url", ""))
+        page_html = str(response_bundle.get("page_html", ""))
+        response_url = str(response_bundle.get("response_url", ""))
+        response_text = str(response_bundle.get("response_text", ""))
+        if self._looks_like_verify(page_url, page_html) or self._looks_like_verify(
+            response_url,
+            response_text,
+        ):
+            raise PlatformBlockedError(
+                "Boss \u76f4\u8058\u8981\u6c42\u5b89\u5168\u9a8c\u8bc1\uff0c\u8bf7\u5148\u5728\u6d4f\u89c8\u5668\u91cc\u5b8c\u6210\u9a8c\u8bc1\u540e\u518d\u91cd\u8bd5\u641c\u7d22\u3002",
+                verification_url=verification_url,
+            )
+
+    def _build_page_url(self, params: dict[str, str]) -> str:
+        query_string = urlencode(params)
+        return f"{self.search_page_url}?{query_string}" if query_string else self.search_page_url
 
     @staticmethod
     def _candidate_queries(
@@ -299,17 +344,25 @@ class BossAdapter:
         resolved: list[tuple[str | None, str | None]] = []
         seen: set[tuple[str | None, str | None]] = set()
         for city in values:
-            clean_city = city.strip()
-            if not clean_city:
-                continue
-            city_code = self.city_codes.get(clean_city)
-            entry = (clean_city, city_code)
+            normalized_city = self._normalize_city_name(city)
+            city_code = self.city_codes.get(normalized_city)
+            entry = (normalized_city or None, city_code)
             if entry in seen:
                 continue
             seen.add(entry)
             resolved.append(entry)
 
         return resolved or [(None, None)]
+
+    @staticmethod
+    def _normalize_city_name(raw_city: str) -> str:
+        candidate = raw_city.strip()
+        for separator in ("\u00b7", "-", "_", "/", "\\", " "):
+            if separator in candidate:
+                candidate = candidate.split(separator, 1)[0].strip()
+        if candidate.endswith("\u5e02"):
+            candidate = candidate[:-1]
+        return candidate
 
     @staticmethod
     def _extract_job_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -332,7 +385,9 @@ class BossAdapter:
             or self._job_id_from_url(item.get("jobUrl") or item.get("url") or "")
         )
         if not external_job_id:
-            raise PlatformDataError("Boss 搜索结果缺少可用的职位 ID。")
+            raise PlatformDataError(
+                "Boss \u641c\u7d22\u7ed3\u679c\u7f3a\u5c11\u53ef\u7528\u7684\u804c\u4f4d ID\u3002"
+            )
 
         title = self._first_non_empty(item, "jobName", "title", "positionName") or query
         company_name = self._first_non_empty(
@@ -340,7 +395,7 @@ class BossAdapter:
             "brandName",
             "companyName",
             "bossCompanyName",
-        ) or "未知公司"
+        ) or "\u672a\u77e5\u516c\u53f8"
 
         salary_text = self._salary_text(item)
         salary_min, salary_max = self._parse_salary_range(salary_text)
@@ -421,10 +476,16 @@ class BossAdapter:
         return ""
 
     def _salary_text(self, item: dict[str, Any]) -> str:
-        salary = self._first_non_empty(item, "salaryDesc", "jobSalary", "salary", "salaryStr")
+        salary = self._first_non_empty(
+            item,
+            "salaryDesc",
+            "jobSalary",
+            "salary",
+            "salaryStr",
+        )
         month = self._first_non_empty(item, "salaryMonthText", "salaryMonth")
         if salary and month and month not in salary:
-            return f"{salary}·{month}"
+            return f"{salary}\u00b7{month}"
         return salary or month
 
     @staticmethod
@@ -441,9 +502,14 @@ class BossAdapter:
 
     def _display_city(self, item: dict[str, Any], fallback_city: str | None) -> str:
         city_name = self._first_non_empty(item, "cityName", "city")
-        district = self._first_non_empty(item, "areaDistrict", "districtName", "businessDistrict")
+        district = self._first_non_empty(
+            item,
+            "areaDistrict",
+            "districtName",
+            "businessDistrict",
+        )
         if city_name and district:
-            return f"{city_name}·{district}"
+            return f"{city_name}\u00b7{district}"
         return city_name or fallback_city or ""
 
     @staticmethod
@@ -477,11 +543,17 @@ class BossAdapter:
     @staticmethod
     def _infer_work_mode(labels: list[str], summary_text: str) -> str:
         haystack = " ".join(labels + [summary_text]).lower()
-        if any(keyword in haystack for keyword in ["远程", "remote", "居家"]):
+        if any(
+            keyword in haystack
+            for keyword in ["\u8fdc\u7a0b", "remote", "\u5c45\u5bb6"]
+        ):
             return "remote"
-        if any(keyword in haystack for keyword in ["hybrid", "混合"]):
+        if any(keyword in haystack for keyword in ["hybrid", "\u6df7\u5408"]):
             return "hybrid"
-        if any(keyword in haystack for keyword in ["onsite", "线下", "坐班", "现场"]):
+        if any(
+            keyword in haystack
+            for keyword in ["onsite", "\u7ebf\u4e0b", "\u5750\u73ed", "\u73b0\u573a"]
+        ):
             return "onsite"
         return ""
 
@@ -496,16 +568,85 @@ class BossAdapter:
         matched = re.search(r"/job_detail/([^/?#]+)\.html", url)
         return matched.group(1) if matched else ""
 
+    def _cache_path(self, query: str, city_code: str | None) -> Path:
+        cache_key = hashlib.sha1(
+            f"{query.lower()}::{city_code or 'all'}".encode("utf-8")
+        ).hexdigest()
+        return self.search_cache_dir / f"{cache_key}.json"
+
+    def _load_cached_jobs(
+        self,
+        *,
+        query: str,
+        city_code: str | None,
+    ) -> list[NormalizedJobDraft] | None:
+        cache_path = self._cache_path(query, city_code)
+        if not cache_path.exists():
+            return None
+
+        try:
+            payload = json.loads(cache_path.read_text(encoding="utf-8"))
+            created_at = datetime.fromisoformat(payload["created_at"])
+            ttl = timedelta(seconds=settings.boss_search_cache_ttl_seconds)
+            if datetime.utcnow() - created_at > ttl:
+                return None
+            return [NormalizedJobDraft(**item) for item in payload.get("jobs", [])]
+        except Exception:
+            return None
+
+    def _save_cached_jobs(
+        self,
+        *,
+        query: str,
+        city_code: str | None,
+        drafts: list[NormalizedJobDraft],
+    ) -> None:
+        cache_path = self._cache_path(query, city_code)
+        payload = {
+            "created_at": datetime.utcnow().isoformat(),
+            "jobs": [draft.__dict__ for draft in drafts],
+        }
+        cache_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    async def _throttle_live_search(self) -> None:
+        throttle_path = self.search_cache_dir / "throttle.json"
+        now = datetime.utcnow()
+        min_interval = settings.boss_search_min_interval_seconds
+        if throttle_path.exists():
+            try:
+                payload = json.loads(throttle_path.read_text(encoding="utf-8"))
+                last_request_at = datetime.fromisoformat(payload["last_request_at"])
+                wait_seconds = min_interval - (now - last_request_at).total_seconds()
+                if wait_seconds > 0:
+                    await asyncio.sleep(wait_seconds)
+            except Exception:
+                pass
+
+        await asyncio.sleep(random.uniform(0.6, 1.2))
+        throttle_path.write_text(
+            json.dumps({"last_request_at": datetime.utcnow().isoformat()}),
+            encoding="utf-8",
+        )
+
     async def open_review(self, url: str) -> str:
         if not settings.disable_browser_open:
-            webbrowser.open(url)
-        return "已在默认浏览器中打开真实职位详情页，请你自行查看。"
+            await browser_session_service.open_runtime_url(self.platform, url)
+        return (
+            "\u5df2\u5728\u4f1a\u8bdd\u6d4f\u89c8\u5668\u4e2d\u6253\u5f00\u771f\u5b9e"
+            "\u804c\u4f4d\u8be6\u60c5\u9875\uff0c\u8bf7\u4f60\u81ea\u884c\u67e5\u770b\u3002"
+        )
 
     async def guided_apply(self, url: str, profile: CandidateProfile) -> str:
         if not settings.disable_browser_open:
-            webbrowser.open(url)
+            await browser_session_service.open_runtime_url(self.platform, url)
+        candidate_name = profile.full_name or "\u5019\u9009\u4eba"
         return (
-            f"已为 {profile.full_name or '候选人'} 打开真实职位页面，并在最终提交前停止。"
+            f"\u5df2\u4e3a {candidate_name} "
+            "\u6253\u5f00\u771f\u5b9e\u804c\u4f4d\u9875\u9762\uff0c\u5e76\u5728\u6700\u7ec8"
+            "\u63d0\u4ea4\u524d\u505c\u6b62\u3002"
         )
 
 

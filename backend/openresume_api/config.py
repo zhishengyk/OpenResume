@@ -9,7 +9,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 @dataclass(frozen=True)
 class Settings:
     api_host: str = os.getenv("OPENRESUME_API_HOST", "127.0.0.1")
-    api_port: int = int(os.getenv("OPENRESUME_API_PORT", "8000"))
+    api_port: int = int(os.getenv("OPENRESUME_API_PORT", "38417"))
     storage_dir: Path = Path(
         os.getenv("OPENRESUME_STORAGE_DIR", str(ROOT_DIR / "storage"))
     )
@@ -24,6 +24,12 @@ class Settings:
     boss_search_mode: str = os.getenv("OPENRESUME_BOSS_SEARCH_MODE", "live")
     boss_search_page_size: int = int(os.getenv("OPENRESUME_BOSS_SEARCH_PAGE_SIZE", "30"))
     boss_search_max_queries: int = int(os.getenv("OPENRESUME_BOSS_SEARCH_MAX_QUERIES", "4"))
+    boss_search_cache_ttl_seconds: int = int(
+        os.getenv("OPENRESUME_BOSS_SEARCH_CACHE_TTL_SECONDS", "1800")
+    )
+    boss_search_min_interval_seconds: float = float(
+        os.getenv("OPENRESUME_BOSS_SEARCH_MIN_INTERVAL_SECONDS", "3")
+    )
     boss_search_api_url: str = os.getenv(
         "OPENRESUME_BOSS_SEARCH_API_URL",
         "https://www.zhipin.com/wapi/zpgeek/search/joblist.json",
@@ -49,6 +55,10 @@ class Settings:
     def rules_dir(self) -> Path:
         return self.storage_dir / "rules"
 
+    @property
+    def cache_dir(self) -> Path:
+        return self.storage_dir / "cache"
+
 
 settings = Settings()
 
@@ -58,5 +68,6 @@ for directory in [
     settings.log_dir,
     settings.browser_dir,
     settings.rules_dir,
+    settings.cache_dir,
 ]:
     directory.mkdir(parents=True, exist_ok=True)

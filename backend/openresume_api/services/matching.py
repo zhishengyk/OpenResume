@@ -16,6 +16,22 @@ class RuleMatch:
 
 
 class MatchingService:
+    @staticmethod
+    def _normalize_city(city: str) -> str:
+        candidate = city.strip()
+        for separator in ("\u00b7", "-", "_", "/", "\\", " "):
+            if separator in candidate:
+                candidate = candidate.split(separator, 1)[0].strip()
+        if candidate.endswith("\u5e02"):
+            candidate = candidate[:-1]
+        return candidate
+
+    def _city_matches(self, draft_city: str, requested_cities: set[str]) -> bool:
+        if not requested_cities:
+            return True
+        normalized_draft = self._normalize_city(draft_city)
+        return normalized_draft in requested_cities
+
     def filter_and_score(
         self,
         profile: CandidateProfile,
@@ -27,7 +43,11 @@ class MatchingService:
     ) -> list[RuleMatch]:
         matches: list[RuleMatch] = []
         targets = [target.lower() for target in requested_targets or profile.target_roles]
-        cities = set(requested_cities or profile.preferred_cities)
+        cities = {
+            self._normalize_city(city)
+            for city in (requested_cities or profile.preferred_cities)
+            if city.strip()
+        }
         must_have = [
             keyword.lower()
             for keyword in requested_keywords or profile.must_have_keywords
@@ -35,11 +55,11 @@ class MatchingService:
         profile_skills = {skill.lower(): skill for skill in profile.skills}
 
         for draft in drafts:
-            if cities and draft.city not in cities:
+            if not self._city_matches(draft.city, cities):
                 continue
             if salary_floor and draft.salary_min and draft.salary_min < salary_floor:
                 continue
-            if not any(
+            if targets and not any(
                 target in draft.title.lower() or target in draft.jd_text.lower()
                 for target in targets
             ):
@@ -63,10 +83,18 @@ class MatchingService:
             role_component = (
                 25.0 if any(target in draft.title.lower() for target in targets) else 12.0
             )
-            level_component = 15.0 if "高级" in draft.title or "资深" in draft.title else 9.0
-            domain_component = 10.0 if "AI" in draft.jd_text or "中后台" in draft.jd_text else 5.0
+            level_component = (
+                15.0
+                if any(keyword in draft.title for keyword in ["\u9ad8\u7ea7", "\u8d44\u6df1"])
+                else 9.0
+            )
+            domain_component = (
+                10.0
+                if any(keyword in draft.jd_text for keyword in ["AI", "\u4e2d\u540e\u53f0"])
+                else 5.0
+            )
             salary_component = 10.0 if draft.salary_min >= salary_floor else 5.0
-            location_component = 5.0 if draft.city in cities else 2.0
+            location_component = 5.0 if self._city_matches(draft.city, cities) else 2.0
             score = (
                 skill_component
                 + role_component
@@ -76,13 +104,13 @@ class MatchingService:
                 + location_component
             )
 
-            risk_flags = []
+            risk_flags: list[str] = []
             if draft.work_mode.lower() == "onsite":
-                risk_flags.append("需要坐班")
-            if "leader" in draft.jd_text.lower() or "带团队" in draft.jd_text:
-                risk_flags.append("要求带团队")
-            if "3-5年" in draft.experience_text and profile.years_experience < 3:
-                risk_flags.append("年限可能不足")
+                risk_flags.append("\u9700\u8981\u5750\u73ed")
+            if "leader" in draft.jd_text.lower() or "\u5e26\u56e2\u961f" in draft.jd_text:
+                risk_flags.append("\u8981\u6c42\u5e26\u56e2\u961f")
+            if "\u0033-\u0035\u5e74" in draft.experience_text and profile.years_experience < 3:
+                risk_flags.append("\u5e74\u9650\u53ef\u80fd\u4e0d\u8db3")
 
             matches.append(
                 RuleMatch(
@@ -99,4 +127,3 @@ class MatchingService:
 
 
 matching_service = MatchingService()
-
