@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-electron/
+coverage/
+.vite/
+.pytest_cache/
+.venv/
+__pycache__/
+*.pyc
+backend/.mypy_cache/
+backend/storage/
+backend/.ruff_cache/
+backend/*.egg-info/
+backend/tests/.test-storage/

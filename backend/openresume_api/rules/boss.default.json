@@ -1,0 +1,15 @@
+{
+  "version": "2026.03.07",
+  "selectors": {
+    "listing_card": ".job-card-wrapper",
+    "title": ".job-name",
+    "company_name": ".company-name",
+    "salary": ".salary",
+    "city": ".job-area",
+    "jd_root": ".job-sec-text"
+  },
+  "page_markers": {
+    "captcha_keywords": ["验证", "滑块", "captcha", "security-check"],
+    "blocked_keywords": ["访问受限", "行为异常", "请稍后再试"]
+  }
+}
