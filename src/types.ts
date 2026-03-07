@@ -49,6 +49,7 @@ export interface PlatformCapability {
 export interface PlatformSession {
   platform: string;
   active: boolean;
+  search_ready?: boolean;
   last_started_at?: string | null;
   storage_dir: string;
   recommended_account_notice: string;
@@ -134,4 +135,3 @@ export interface SearchEvent {
   timestamp: string;
   payload?: Record<string, unknown>;
 }
-

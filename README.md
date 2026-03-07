@@ -291,7 +291,7 @@ python -m openresume_api
 健康检查：
 
 ```bash
-curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:38417/health
 ```
 
 如果你只想演示完整流程、不想触发真实 Boss 搜索，可以先设置：

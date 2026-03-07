@@ -10,6 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
+from .adapters.base import PlatformBlockedError
+from .config import settings
 from .db import get_session, init_db
 from .models import (
     ApplicationAttempt,
@@ -163,6 +165,7 @@ async def start_platform_session(platform: str, db: SessionDep):
     return PlatformSessionResponse(
         platform=platform,
         active=state["active"],
+        search_ready=bool(state.get("search_ready")),
         last_started_at=(
             datetime.fromisoformat(state["last_started_at"])
             if state["last_started_at"]
@@ -179,6 +182,7 @@ async def get_platform_session(platform: str, db: SessionDep):
     return PlatformSessionResponse(
         platform=platform,
         active=state["active"],
+        search_ready=bool(state.get("search_ready")),
         last_started_at=(
             datetime.fromisoformat(state["last_started_at"])
             if state["last_started_at"]
@@ -199,12 +203,46 @@ async def create_search_session(payload: SearchSessionCreate, db: SessionDep):
     adapter = platform_gateway.get(payload.platform)
     capability = adapter.capability()
     if not capability.search_supported:
-        raise HTTPException(status_code=409, detail="当前平台暂不支持搜索能力。")
+        raise HTTPException(status_code=409, detail="\u5f53\u524d\u5e73\u53f0\u6682\u4e0d\u652f\u6301\u641c\u7d22\u80fd\u529b\u3002")
     if (
         payload.mode == "guided_apply"
         and not compliance_service.has_guided_apply_consent(db, payload.platform)
     ):
-        raise HTTPException(status_code=403, detail="请先完成引导投递风险确认。")
+        raise HTTPException(status_code=403, detail="\u8bf7\u5148\u5b8c\u6210\u5f15\u5bfc\u6295\u9012\u98ce\u9669\u786e\u8ba4\u3002")
+
+    if payload.platform == "boss" and settings.boss_search_mode.lower().strip() == "live":
+        state = await adapter.session_state(db)
+        if not state.get("active"):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "\u8bf7\u5148\u542f\u52a8 Boss \u4f1a\u8bdd\uff0c"
+                    "\u5e76\u5728\u4f1a\u8bdd\u6d4f\u89c8\u5668\u4e2d\u5b8c\u6210\u767b\u5f55/\u9a8c\u8bc1\u3002"
+                ),
+            )
+        try:
+            await adapter.ensure_search_ready()
+            browser_session_service.set_search_ready(
+                db,
+                payload.platform,
+                True,
+                reason="search_gate_passed",
+            )
+        except PlatformBlockedError as error:
+            browser_session_service.set_search_ready(
+                db,
+                payload.platform,
+                False,
+                reason="search_gate_blocked",
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"{str(error)} "
+                    "\u8bf7\u5148\u70b9\u51fb\u201c\u91cd\u65b0\u6253\u5f00\u9a8c\u8bc1\u9875\u201d\uff0c"
+                    "\u5b8c\u6210\u767b\u5f55/\u9a8c\u8bc1\u540e\u518d\u91cd\u8bd5\u3002"
+                ),
+            ) from error
     return await search_service.create_session(db, payload)
 
 

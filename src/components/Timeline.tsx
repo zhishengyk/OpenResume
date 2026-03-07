@@ -3,9 +3,13 @@ import type { SearchEvent } from "../types";
 function eventTypeLabel(type: string) {
   const mapping: Record<string, string> = {
     search_started: "\u4efb\u52a1\u521b\u5efa",
+    search_restarted: "\u91cd\u8bd5\u641c\u7d22",
     fetching_jobs: "\u6293\u53d6\u804c\u4f4d",
     rule_ranked: "\u89c4\u5219\u7b5b\u9009",
     llm_enriched: "\u6a21\u578b\u8865\u5145",
+    verification_opened: "\u6253\u5f00\u9a8c\u8bc1\u9875",
+    blocked: "\u5e73\u53f0\u963b\u585e",
+    failed: "\u4efb\u52a1\u5931\u8d25",
     ready: "\u4efb\u52a1\u5b8c\u6210",
   };
 
@@ -54,4 +58,3 @@ export function Timeline({ events }: TimelineProps) {
     </div>
   );
 }
-

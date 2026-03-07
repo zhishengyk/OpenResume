@@ -5,9 +5,11 @@
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
-    "dev": "concurrently -k \"npm:dev:web\" \"npm:dev:electron\"",
+    "dev": "npm run dev:cleanup-api-port && npm run dev:check-ports && concurrently -k \"npm:dev:web\" \"npm:dev:electron\"",
+    "dev:cleanup-api-port": "node scripts/cleanup-api-port.cjs",
+    "dev:check-ports": "node scripts/check-dev-ports.cjs",
     "dev:web": "vite",
-    "dev:electron": "wait-on tcp:5173 && electron .",
+    "dev:electron": "node scripts/start-electron-dev.cjs",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "package:windows": "npm run build && node scripts/verify-backend-bundle.cjs && electron-builder --win portable"

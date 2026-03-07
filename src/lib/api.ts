@@ -20,7 +20,7 @@ declare global {
 }
 
 const API_BASE =
-  window.openResumeDesktop?.apiBaseUrl || "http://127.0.0.1:8000";
+  window.openResumeDesktop?.apiBaseUrl || "http://127.0.0.1:38417";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, init);
@@ -99,6 +99,14 @@ export const api = {
     }),
   listSearchSessions: () => request<SearchSession[]>("/api/search-sessions"),
   getSearchSession: (id: string) => request<SearchSession>(`/api/search-sessions/${id}`),
+  retrySearchSession: (id: string) =>
+    request<SearchSession>(`/api/search-sessions/${id}/retry`, {
+      method: "POST",
+    }),
+  openSearchVerification: (id: string) =>
+    request<{ message: string }>(`/api/search-sessions/${id}/open-verification`, {
+      method: "POST",
+    }),
   getSearchMatches: (id: string) =>
     request<JobMatch[]>(`/api/search-sessions/${id}/matches`),
   openReview: (jobId: string) =>

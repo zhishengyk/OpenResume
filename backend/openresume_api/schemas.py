@@ -36,6 +36,7 @@ class PlatformCapabilityResponse(BaseModel):
 class PlatformSessionResponse(BaseModel):
     platform: str
     active: bool
+    search_ready: bool = False
     last_started_at: datetime | None = None
     storage_dir: str
     recommended_account_notice: str

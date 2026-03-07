@@ -3,8 +3,8 @@ const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 
-const API_PORT = process.env.OPENRESUME_API_PORT || "8000";
-const RENDERER_URL = process.env.OPENRESUME_RENDERER_URL || "http://127.0.0.1:5173";
+const API_PORT = process.env.OPENRESUME_API_PORT || "38417";
+const RENDERER_URL = process.env.OPENRESUME_RENDERER_URL || "http://127.0.0.1:4173";
 let backendProcess = null;
 
 function logBackend(stream, label) {
@@ -131,4 +131,3 @@ app.on("before-quit", () => {
     backendProcess.kill();
   }
 });
-

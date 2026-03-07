@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime
+import logging
 from pathlib import Path
 from typing import Any
 import webbrowser
@@ -11,6 +12,8 @@ from sqlmodel import Session
 
 from ..config import settings
 from ..models import AppSetting
+
+logger = logging.getLogger(__name__)
 
 try:
     from playwright.async_api import BrowserContext, Page, TimeoutError as PlaywrightTimeoutError, async_playwright
@@ -141,16 +144,58 @@ class BrowserSessionService:
         runtime = self._runtimes.get(platform)
         return bool(runtime and not runtime.page.is_closed())
 
-    async def _navigate(self, platform: str, url: str) -> str:
-        page = await self._ensure_page(platform)
+    async def _reset_runtime(self, platform: str) -> None:
+        runtime = self._runtimes.pop(platform, None)
+        if not runtime:
+            return
         try:
-            # Verification pages may refresh/redirect aggressively; timeout should not trigger external fallback.
-            await page.goto(url, wait_until="domcontentloaded", timeout=12000)
-        except PlaywrightTimeoutError:
+            await runtime.context.close()
+        except Exception:
             pass
+
+    async def _navigate(
+        self,
+        platform: str,
+        url: str,
+        *,
+        force_new_page: bool = False,
+        wait_until: str = "commit",
+        timeout: int = 15000,
+    ) -> str:
+        runtime = await self._ensure_runtime(platform)
+        if force_new_page or runtime.page.is_closed():
+            runtime.page = await runtime.context.new_page()
+        page = runtime.page
+        try:
+            await page.goto(url, wait_until=wait_until, timeout=timeout)
+        except PlaywrightTimeoutError:
+            # Fallback to client-side assignment; some login pages keep redirecting during challenge.
+            try:
+                await page.evaluate(
+                    "target => { window.location.href = target; }",
+                    url,
+                )
+                await page.wait_for_timeout(600)
+            except Exception:
+                pass
+
+        current_url = page.url or ""
+        if current_url.startswith("about:blank"):
+            try:
+                await page.evaluate(
+                    "target => { window.location.href = target; }",
+                    url,
+                )
+                await page.wait_for_timeout(600)
+                current_url = page.url or ""
+            except Exception:
+                current_url = ""
+
         if not settings.disable_browser_open:
             await page.bring_to_front()
-        return page.url or url
+        if not current_url or current_url.startswith("about:blank"):
+            raise RuntimeError(f"session navigate failed, stayed on about:blank for {url}")
+        return current_url
 
     async def start(self, db: Session, platform: str, login_url: str) -> dict:
         storage_dir = self.session_dir(platform)
@@ -166,20 +211,48 @@ class BrowserSessionService:
                 },
             )
 
-        runtime_available = self._has_runtime(platform)
         try:
-            current_url = await self._navigate(platform, login_url)
+            # Session start always uses a fresh page to avoid reusing stale about:blank tabs.
+            current_url = await self._navigate(
+                platform,
+                login_url,
+                force_new_page=True,
+                wait_until="domcontentloaded",
+                timeout=30000,
+            )
             runtime = "playwright"
-        except Exception:
-            runtime_available = runtime_available or self._has_runtime(platform)
-            if runtime_available:
-                # Keep single-window behavior when Playwright context already exists.
-                current_url = login_url
+        except Exception as first_error:
+            logger.warning(
+                "session start navigate failed on first attempt: platform=%s url=%s error=%s",
+                platform,
+                login_url,
+                first_error,
+            )
+            try:
+                # Retry once with the default navigation strategy before falling back.
+                current_url = await self._navigate(platform, login_url, force_new_page=True)
                 runtime = "playwright"
-            else:
-                webbrowser.open(login_url)
-                current_url = login_url
-                runtime = "external"
+            except Exception as second_error:
+                logger.warning(
+                    "session start navigate failed on second attempt: platform=%s url=%s error=%s",
+                    platform,
+                    login_url,
+                    second_error,
+                )
+                try:
+                    await self._reset_runtime(platform)
+                    current_url = await self._navigate(platform, login_url, force_new_page=True)
+                    runtime = "playwright"
+                except Exception as third_error:
+                    logger.warning(
+                        "session start fallback to external browser: platform=%s url=%s error=%s",
+                        platform,
+                        login_url,
+                        third_error,
+                    )
+                    webbrowser.open(login_url)
+                    current_url = login_url
+                    runtime = "external"
 
         return self._upsert_state(
             db,
@@ -231,32 +304,61 @@ class BrowserSessionService:
             current_url = url
             runtime = "disabled"
         else:
-            runtime_available = self._has_runtime(platform)
             try:
                 current_url = await self.open_runtime_url(platform, url)
                 runtime = "playwright"
-            except Exception:
-                runtime_available = runtime_available or self._has_runtime(platform)
-                if runtime_available:
-                    # Avoid opening a second external browser window on transient navigation failures.
-                    current_url = url
+            except Exception as first_error:
+                logger.warning(
+                    "open_url failed on current runtime page: platform=%s url=%s reason=%s error=%s",
+                    platform,
+                    url,
+                    reason,
+                    first_error,
+                )
+                try:
+                    current_url = await self._navigate(platform, url, force_new_page=True)
                     runtime = "playwright"
-                else:
-                    webbrowser.open(url)
-                    current_url = url
-                    runtime = "external"
+                except Exception as second_error:
+                    logger.warning(
+                        "open_url failed on fresh page: platform=%s url=%s reason=%s error=%s",
+                        platform,
+                        url,
+                        reason,
+                        second_error,
+                    )
+                    try:
+                        await self._reset_runtime(platform)
+                        current_url = await self._navigate(
+                            platform,
+                            url,
+                            force_new_page=True,
+                        )
+                        runtime = "playwright"
+                    except Exception as third_error:
+                        logger.warning(
+                            "open_url fallback to external browser: platform=%s url=%s reason=%s error=%s",
+                            platform,
+                            url,
+                            reason,
+                            third_error,
+                        )
+                        webbrowser.open(url)
+                        current_url = url
+                        runtime = "external"
+        payload = {
+            "active": True,
+            "storage_dir": str(storage_dir),
+            "last_opened_url": current_url,
+            "last_opened_reason": reason,
+            "last_opened_at": datetime.utcnow().isoformat(),
+            "runtime": runtime,
+        }
+        if reason == "search_verification":
+            payload["search_ready"] = False
         return self._upsert_state(
             db,
             platform,
-            {
-                "active": True,
-                "search_ready": False if reason == "search_verification" else None,
-                "storage_dir": str(storage_dir),
-                "last_opened_url": current_url,
-                "last_opened_reason": reason,
-                "last_opened_at": datetime.utcnow().isoformat(),
-                "runtime": runtime,
-            },
+            payload,
         )
 
     async def fetch_json_with_session(
@@ -300,12 +402,19 @@ class BrowserSessionService:
         if not setting:
             return {
                 "active": False,
+                "search_ready": False,
                 "storage_dir": str(storage_dir),
                 "last_started_at": None,
             }
+        runtime = self._runtimes.get(platform)
+        runtime_alive = bool(runtime and not runtime.page.is_closed())
+        active = bool(setting.value.get("active")) and (
+            settings.disable_browser_open or runtime_alive
+        )
+        search_ready = bool(setting.value.get("search_ready")) and active
         return {
-            "active": bool(setting.value.get("active")),
-            "search_ready": bool(setting.value.get("search_ready")),
+            "active": active,
+            "search_ready": search_ready,
             "storage_dir": str(storage_dir),
             "last_started_at": setting.value.get("last_started_at"),
         }

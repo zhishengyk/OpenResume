@@ -74,6 +74,10 @@ export function SearchPage() {
 
   const guidedApplyEnabled =
     appStateQuery.data?.guided_apply_consents.includes(platform);
+  const searchErrorMessage =
+    searchMutation.isError && searchMutation.error instanceof Error
+      ? searchMutation.error.message
+      : null;
 
   return (
     <div className="space-y-6">
@@ -195,6 +199,11 @@ export function SearchPage() {
                 {searchMutation.isPending ? "正在启动任务..." : "开始搜索任务"}
               </button>
             </div>
+            {searchErrorMessage ? (
+              <p className="mt-4 rounded-2xl border border-ember/30 bg-ember/10 px-4 py-3 text-sm leading-6 text-ink">
+                {searchErrorMessage}
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -260,4 +269,3 @@ export function SearchPage() {
     </div>
   );
 }
-
