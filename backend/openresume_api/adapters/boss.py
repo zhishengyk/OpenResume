@@ -76,7 +76,7 @@ class BossAdapter:
         await browser_session_service.start(
             db,
             self.platform,
-            "https://www.zhipin.com/web/user/",
+            self.search_page_url,
         )
 
     async def session_state(self, db: Session) -> dict:

@@ -154,3 +154,61 @@ def test_blocked_search_can_open_verification_and_retry(client, monkeypatch):
     assert len(payload) == 1
     assert payload[0]["url"].endswith("/job_detail/job-live-001.html")
     assert call_count["value"] == 2
+
+
+def test_check_ready_returns_blocked_detail(client, monkeypatch):
+    async def fake_ensure_search_ready():
+        raise PlatformBlockedError(
+            "需要人工验证。",
+            verification_url="https://example.com/verify",
+        )
+
+    monkeypatch.setattr(boss_adapter, "ensure_search_ready", fake_ensure_search_ready)
+
+    started = client.post("/api/platforms/boss/session/start")
+    assert started.status_code == 200
+
+    response = client.post("/api/platforms/boss/session/check-ready")
+    assert response.status_code == 409
+    assert "完成登录或验证" in response.json()["detail"]
+
+
+def test_check_ready_returns_service_error_detail(client, monkeypatch):
+    async def fake_ensure_search_ready():
+        raise RuntimeError("profile lock")
+
+    monkeypatch.setattr(boss_adapter, "ensure_search_ready", fake_ensure_search_ready)
+
+    started = client.post("/api/platforms/boss/session/start")
+    assert started.status_code == 200
+
+    response = client.post("/api/platforms/boss/session/check-ready")
+    assert response.status_code == 503
+    assert "profile lock" in response.json()["detail"]
+
+
+def test_start_session_returns_service_error_detail(client, monkeypatch):
+    async def fake_start_session(db):
+        raise RuntimeError("debug port missing")
+
+    monkeypatch.setattr(boss_adapter, "start_session", fake_start_session)
+
+    response = client.post("/api/platforms/boss/session/start")
+    assert response.status_code == 503
+    assert "debug port missing" in response.json()["detail"]
+
+
+def test_cached_profile_marks_platform_session_active(client):
+    from pathlib import Path
+
+    storage_dir = Path(__file__).resolve().parent / ".test-storage" / "browser" / "boss"
+    (storage_dir / "Default" / "Network").mkdir(parents=True, exist_ok=True)
+    (storage_dir / "Local State").write_text("{}", encoding="utf-8")
+    (storage_dir / "Default" / "Preferences").write_text("{}", encoding="utf-8")
+    (storage_dir / "Default" / "Network" / "Cookies").write_text("cookie", encoding="utf-8")
+
+    response = client.get("/api/platforms/boss/session")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["active"] is True
+    assert payload["search_ready"] is False

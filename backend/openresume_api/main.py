@@ -40,6 +40,8 @@ from .services.search import search_service
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
+RECOMMENDED_ACCOUNT_NOTICE = "建议使用独立账号或独立会话目录进行引导投递。"
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -84,6 +86,20 @@ def profile_response(profile: CandidateProfile) -> dict:
     }
 
 
+def platform_session_response(platform: str, state: dict) -> PlatformSessionResponse:
+    last_started_at = state.get("last_started_at")
+    return PlatformSessionResponse(
+        platform=platform,
+        active=bool(state.get("active")),
+        search_ready=bool(state.get("search_ready")),
+        last_started_at=(
+            datetime.fromisoformat(last_started_at) if last_started_at else None
+        ),
+        storage_dir=str(state.get("storage_dir") or ""),
+        recommended_account_notice=RECOMMENDED_ACCOUNT_NOTICE,
+    )
+
+
 def match_response(match: JobMatch, job: JobListing) -> JobMatchResponse:
     return JobMatchResponse(
         id=match.id,
@@ -107,6 +123,58 @@ def match_response(match: JobMatch, job: JobListing) -> JobMatchResponse:
         risk_flags=match.risk_flags,
         llm_summary=match.llm_summary,
         cached_llm=match.cached_llm,
+    )
+
+
+async def ensure_platform_search_ready(
+    db: Session,
+    *,
+    platform: str,
+    adapter,
+    success_reason: str,
+    blocked_reason: str,
+    failed_reason: str,
+    blocked_hint: str,
+) -> None:
+    if not hasattr(adapter, "ensure_search_ready"):
+        browser_session_service.set_search_ready(
+            db,
+            platform,
+            True,
+            reason=success_reason,
+        )
+        return
+
+    try:
+        await adapter.ensure_search_ready()
+    except PlatformBlockedError as error:
+        browser_session_service.set_search_ready(
+            db,
+            platform,
+            False,
+            reason=blocked_reason,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=f"{str(error)} {blocked_hint}",
+        ) from error
+    except Exception as error:
+        browser_session_service.set_search_ready(
+            db,
+            platform,
+            False,
+            reason=failed_reason,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail=f"{platform} 会话检查失败：{error}",
+        ) from error
+
+    browser_session_service.set_search_ready(
+        db,
+        platform,
+        True,
+        reason=success_reason,
     )
 
 
@@ -160,36 +228,48 @@ def get_platform_capabilities(platform: str):
 @app.post("/api/platforms/{platform}/session/start", response_model=PlatformSessionResponse)
 async def start_platform_session(platform: str, db: SessionDep):
     adapter = platform_gateway.get(platform)
-    await adapter.start_session(db)
+    try:
+        await adapter.start_session(db)
+    except Exception as error:
+        raise HTTPException(
+            status_code=503,
+            detail=f"{platform} 会话启动失败：{error}",
+        ) from error
     state = await adapter.session_state(db)
-    return PlatformSessionResponse(
-        platform=platform,
-        active=state["active"],
-        search_ready=bool(state.get("search_ready")),
-        last_started_at=(
-            datetime.fromisoformat(state["last_started_at"])
-            if state["last_started_at"]
-            else None
-        ),
-        storage_dir=state["storage_dir"],
-        recommended_account_notice="建议使用独立账号或独立会话目录进行引导投递。",
-    )
+    return platform_session_response(platform, state)
 
 
 @app.get("/api/platforms/{platform}/session", response_model=PlatformSessionResponse)
 async def get_platform_session(platform: str, db: SessionDep):
     state = browser_session_service.state(db, platform)
-    return PlatformSessionResponse(
+    return platform_session_response(platform, state)
+
+
+@app.post(
+    "/api/platforms/{platform}/session/check-ready",
+    response_model=PlatformSessionResponse,
+)
+async def check_platform_session_ready(platform: str, db: SessionDep):
+    adapter = platform_gateway.get(platform)
+    state = browser_session_service.state(db, platform)
+    if not state.get("active"):
+        raise HTTPException(
+            status_code=409,
+            detail="请先启动平台会话，并在专用浏览器窗口中完成登录。",
+        )
+
+    await ensure_platform_search_ready(
+        db,
         platform=platform,
-        active=state["active"],
-        search_ready=bool(state.get("search_ready")),
-        last_started_at=(
-            datetime.fromisoformat(state["last_started_at"])
-            if state["last_started_at"]
-            else None
-        ),
-        storage_dir=state["storage_dir"],
-        recommended_account_notice="建议使用独立账号或独立会话目录进行引导投递。",
+        adapter=adapter,
+        success_reason="manual_check_passed",
+        blocked_reason="manual_check_blocked",
+        failed_reason="manual_check_failed",
+        blocked_hint="请先在 Boss 会话窗口里完成登录或验证，然后再刷新会话状态。",
+    )
+    return platform_session_response(
+        platform,
+        browser_session_service.state(db, platform),
     )
 
 
@@ -203,12 +283,12 @@ async def create_search_session(payload: SearchSessionCreate, db: SessionDep):
     adapter = platform_gateway.get(payload.platform)
     capability = adapter.capability()
     if not capability.search_supported:
-        raise HTTPException(status_code=409, detail="\u5f53\u524d\u5e73\u53f0\u6682\u4e0d\u652f\u6301\u641c\u7d22\u80fd\u529b\u3002")
+        raise HTTPException(status_code=409, detail="当前平台暂不支持搜索能力。")
     if (
         payload.mode == "guided_apply"
         and not compliance_service.has_guided_apply_consent(db, payload.platform)
     ):
-        raise HTTPException(status_code=403, detail="\u8bf7\u5148\u5b8c\u6210\u5f15\u5bfc\u6295\u9012\u98ce\u9669\u786e\u8ba4\u3002")
+        raise HTTPException(status_code=403, detail="请先完成引导投递风险确认。")
 
     if payload.platform == "boss" and settings.boss_search_mode.lower().strip() == "live":
         state = await adapter.session_state(db)
@@ -216,33 +296,18 @@ async def create_search_session(payload: SearchSessionCreate, db: SessionDep):
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    "\u8bf7\u5148\u542f\u52a8 Boss \u4f1a\u8bdd\uff0c"
-                    "\u5e76\u5728\u4f1a\u8bdd\u6d4f\u89c8\u5668\u4e2d\u5b8c\u6210\u767b\u5f55/\u9a8c\u8bc1\u3002"
+                    "请先启动 Boss 会话，并在会话浏览器中完成登录或验证。"
                 ),
             )
-        try:
-            await adapter.ensure_search_ready()
-            browser_session_service.set_search_ready(
-                db,
-                payload.platform,
-                True,
-                reason="search_gate_passed",
-            )
-        except PlatformBlockedError as error:
-            browser_session_service.set_search_ready(
-                db,
-                payload.platform,
-                False,
-                reason="search_gate_blocked",
-            )
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"{str(error)} "
-                    "\u8bf7\u5148\u70b9\u51fb\u201c\u91cd\u65b0\u6253\u5f00\u9a8c\u8bc1\u9875\u201d\uff0c"
-                    "\u5b8c\u6210\u767b\u5f55/\u9a8c\u8bc1\u540e\u518d\u91cd\u8bd5\u3002"
-                ),
-            ) from error
+        await ensure_platform_search_ready(
+            db,
+            platform=payload.platform,
+            adapter=adapter,
+            success_reason="search_gate_passed",
+            blocked_reason="search_gate_blocked",
+            failed_reason="search_gate_failed",
+            blocked_hint="请先点击“刷新 Boss 会话状态”，确认通过后再开始搜索。",
+        )
     return await search_service.create_session(db, payload)
 
 
@@ -258,7 +323,7 @@ def list_search_sessions(db: SessionDep):
 def get_search_session(session_id: str, db: SessionDep):
     session = db.get(SearchSession, session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="\u641c\u7d22\u4efb\u52a1\u4e0d\u5b58\u5728\u3002")
+        raise HTTPException(status_code=404, detail="搜索任务不存在。")
     return session
 
 

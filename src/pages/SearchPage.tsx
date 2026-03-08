@@ -31,14 +31,6 @@ const modeCards: Array<{
 export function SearchPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const appStateQuery = useQuery({
-    queryKey: ["app-state"],
-    queryFn: api.getAppState,
-  });
-  const riskStatusQuery = useQuery({
-    queryKey: ["risk-status", "boss"],
-    queryFn: () => api.getRiskStatus("boss"),
-  });
 
   const [platform, setPlatform] = useState("boss");
   const [mode, setMode] = useState<AutomationMode>("recommend_only");
@@ -48,6 +40,35 @@ export function SearchPage() {
   const [mustHaveKeywords, setMustHaveKeywords] = useState(
     "React, TypeScript, Node.js",
   );
+
+  const appStateQuery = useQuery({
+    queryKey: ["app-state"],
+    queryFn: api.getAppState,
+  });
+  const riskStatusQuery = useQuery({
+    queryKey: ["risk-status", "boss"],
+    queryFn: () => api.getRiskStatus("boss"),
+  });
+  const bossSessionQuery = useQuery({
+    queryKey: ["platform-session", "boss"],
+    queryFn: () => api.getPlatformSession("boss"),
+    enabled: platform === "boss",
+    refetchInterval: platform === "boss" ? 4000 : false,
+  });
+
+  const bossSessionStartMutation = useMutation({
+    mutationFn: () => api.startPlatformSession("boss"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["platform-session", "boss"] });
+    },
+  });
+
+  const bossSessionReadyMutation = useMutation({
+    mutationFn: () => api.checkPlatformSessionReady("boss"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["platform-session", "boss"] });
+    },
+  });
 
   const guidedConsentMutation = useMutation({
     mutationFn: () => api.createGuidedApplyConsent(platform),
@@ -74,9 +95,20 @@ export function SearchPage() {
 
   const guidedApplyEnabled =
     appStateQuery.data?.guided_apply_consents.includes(platform);
+  const bossSessionActive = Boolean(bossSessionQuery.data?.active);
+  const bossSessionReady = Boolean(bossSessionQuery.data?.search_ready);
+  const bossNeedsStart = platform === "boss" && !bossSessionActive;
+  const bossNeedsVerification =
+    platform === "boss" && bossSessionActive && !bossSessionReady;
+
   const searchErrorMessage =
     searchMutation.isError && searchMutation.error instanceof Error
       ? searchMutation.error.message
+      : null;
+  const bossReadyErrorMessage =
+    bossSessionReadyMutation.isError &&
+    bossSessionReadyMutation.error instanceof Error
+      ? bossSessionReadyMutation.error.message
       : null;
 
   return (
@@ -161,6 +193,7 @@ export function SearchPage() {
                 />
               </label>
             </div>
+
             <label className="mt-5 block space-y-2">
               <span className="text-xs uppercase tracking-[0.2em] text-slate">
                 必须命中关键词
@@ -174,6 +207,34 @@ export function SearchPage() {
             </label>
 
             <div className="mt-6 flex flex-wrap gap-3">
+              {platform === "boss" ? (
+                <button
+                  type="button"
+                  className="rounded-full border border-ink/10 bg-shell px-6 py-3 text-sm font-semibold text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => bossSessionStartMutation.mutate()}
+                  disabled={bossSessionStartMutation.isPending}
+                >
+                  {bossSessionStartMutation.isPending
+                    ? "正在打开 Boss 会话..."
+                    : "启动 / 重新打开 Boss 会话"}
+                </button>
+              ) : null}
+
+              {platform === "boss" ? (
+                <button
+                  type="button"
+                  className="rounded-full border border-ink/10 bg-shell px-6 py-3 text-sm font-semibold text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => bossSessionReadyMutation.mutate()}
+                  disabled={
+                    bossSessionReadyMutation.isPending || bossSessionStartMutation.isPending
+                  }
+                >
+                  {bossSessionReadyMutation.isPending
+                    ? "正在检查 Boss 会话..."
+                    : "刷新 Boss 会话状态"}
+                </button>
+              ) : null}
+
               {mode === "guided_apply" && !guidedApplyEnabled ? (
                 <button
                   type="button"
@@ -186,12 +247,16 @@ export function SearchPage() {
                     : "确认引导投递风险"}
                 </button>
               ) : null}
+
               <button
                 type="button"
                 className="inline-flex items-center gap-2 rounded-full bg-ink px-6 py-3 text-sm font-semibold text-shell transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:bg-ink/40"
                 onClick={() => searchMutation.mutate()}
                 disabled={
                   searchMutation.isPending ||
+                  bossSessionStartMutation.isPending ||
+                  bossSessionReadyMutation.isPending ||
+                  bossNeedsStart ||
                   (mode === "guided_apply" && !guidedApplyEnabled)
                 }
               >
@@ -199,6 +264,25 @@ export function SearchPage() {
                 {searchMutation.isPending ? "正在启动任务..." : "开始搜索任务"}
               </button>
             </div>
+
+            {bossNeedsStart ? (
+              <p className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-ink">
+                还没有可用的 Boss 会话。请先点击“启动 / 重新打开 Boss 会话”，在专用浏览器窗口里登录。
+              </p>
+            ) : null}
+
+            {bossNeedsVerification ? (
+              <p className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-ink">
+                Boss 会话已激活，但还没有完成登录或安全验证。你可以先点击“刷新 Boss 会话状态”，也可以直接点“开始搜索任务”，系统会在提交搜索前再次检查会话状态。
+              </p>
+            ) : null}
+
+            {bossReadyErrorMessage ? (
+              <p className="mt-4 rounded-2xl border border-ember/30 bg-ember/10 px-4 py-3 text-sm leading-6 text-ink">
+                {bossReadyErrorMessage}
+              </p>
+            ) : null}
+
             {searchErrorMessage ? (
               <p className="mt-4 rounded-2xl border border-ember/30 bg-ember/10 px-4 py-3 text-sm leading-6 text-ink">
                 {searchErrorMessage}
