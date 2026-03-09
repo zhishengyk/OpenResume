@@ -43,6 +43,8 @@ export interface PlatformCapability {
   detail_parse_supported: boolean;
   review_open_supported: boolean;
   guided_apply_supported: boolean;
+  session_supported: boolean;
+  session_required: boolean;
   rule_pack_version: string;
 }
 

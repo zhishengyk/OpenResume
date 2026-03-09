@@ -1,8 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ShieldCheck, UploadCloud } from "lucide-react";
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { Layers3, UploadCloud } from "lucide-react";
+import { ChangeEvent, useEffect, useState } from "react";
 import { api } from "../lib/api";
-import { pillLabel, splitCommaValues } from "../lib/utils";
+import { splitCommaValues } from "../lib/utils";
+
+const emptyDraft = {
+  full_name: "",
+  headline: "",
+  summary: "",
+  target_roles: "",
+  preferred_cities: "",
+  salary_floor: "0",
+  years_experience: "0",
+  degree: "",
+  skills: "",
+  must_have_keywords: "",
+  source_language: "zh-CN",
+};
 
 export function SetupPage() {
   const queryClient = useQueryClient();
@@ -14,60 +28,28 @@ export function SetupPage() {
     queryKey: ["platforms"],
     queryFn: api.getPlatforms,
   });
-  const bossSessionQuery = useQuery({
-    queryKey: ["platform-session", "boss"],
-    queryFn: () => api.getPlatformSession("boss"),
-  });
 
-  const [draft, setDraft] = useState(() => ({
-    full_name: "",
-    headline: "",
-    summary: "",
-    target_roles: "",
-    preferred_cities: "",
-    salary_floor: "0",
-    years_experience: "0",
-    degree: "",
-    skills: "",
-    must_have_keywords: "",
-    source_language: "zh-CN",
-  }));
-
-  const activeProfile = useMemo(() => {
-    if (!profileQuery.data) {
-      return null;
-    }
-
-    return {
-      ...profileQuery.data,
-      target_roles: profileQuery.data.target_roles.join(", "),
-      preferred_cities: profileQuery.data.preferred_cities.join(", "),
-      salary_floor: String(profileQuery.data.salary_floor || 0),
-      years_experience: String(profileQuery.data.years_experience || 0),
-      skills: profileQuery.data.skills.join(", "),
-      must_have_keywords: profileQuery.data.must_have_keywords.join(", "),
-    };
-  }, [profileQuery.data]);
+  const [draft, setDraft] = useState(emptyDraft);
 
   useEffect(() => {
-    if (!activeProfile) {
+    if (!profileQuery.data) {
       return;
     }
 
     setDraft({
-      full_name: activeProfile.full_name,
-      headline: activeProfile.headline,
-      summary: activeProfile.summary,
-      target_roles: activeProfile.target_roles,
-      preferred_cities: activeProfile.preferred_cities,
-      salary_floor: activeProfile.salary_floor,
-      years_experience: activeProfile.years_experience,
-      degree: activeProfile.degree,
-      skills: activeProfile.skills,
-      must_have_keywords: activeProfile.must_have_keywords,
-      source_language: activeProfile.source_language,
+      full_name: profileQuery.data.full_name,
+      headline: profileQuery.data.headline,
+      summary: profileQuery.data.summary,
+      target_roles: profileQuery.data.target_roles.join(", "),
+      preferred_cities: profileQuery.data.preferred_cities.join(", "),
+      salary_floor: String(profileQuery.data.salary_floor || 0),
+      years_experience: String(profileQuery.data.years_experience || 0),
+      degree: profileQuery.data.degree,
+      skills: profileQuery.data.skills.join(", "),
+      must_have_keywords: profileQuery.data.must_have_keywords.join(", "),
+      source_language: profileQuery.data.source_language,
     });
-  }, [activeProfile]);
+  }, [profileQuery.data]);
 
   const uploadMutation = useMutation({
     mutationFn: api.uploadResume,
@@ -116,13 +98,6 @@ export function SetupPage() {
     },
   });
 
-  const sessionMutation = useMutation({
-    mutationFn: () => api.startPlatformSession("boss"),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["platform-session", "boss"] });
-    },
-  });
-
   const handleUpload = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
@@ -140,40 +115,32 @@ export function SetupPage() {
             候选人画像
           </p>
           <h1 className="mt-3 font-display text-5xl italic text-ink">
-            先整理一份可靠画像，再驱动后续所有搜岗动作。
+            先把简历抽成稳定数据，再让平台模块各自消费。
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-slate">
-            上传一份 PDF 或 DOCX 简历，检查系统抽取出的求职意向、技能和偏好，再把结构化资料修到足够准确。
+            主分支不再内置单个平台的真实登录逻辑，只保留模块化框架和一个本地
+            Demo 模块，用来验证搜索、匹配和风控链路。
           </p>
         </section>
 
         <section className="rounded-[32px] border border-ember/20 bg-ember/10 p-6 shadow-console">
-          <p className="text-xs uppercase tracking-[0.24em] text-ember">
-            会话隔离
-          </p>
-          <p className="mt-3 font-display text-4xl italic text-ink">
-            仅使用专用浏览器状态
-          </p>
-          <p className="mt-4 text-sm leading-7 text-slate">
-            应用会为招聘平台维护独立的本地会话目录，不读取你日常浏览器的主 Profile，也不会保存平台密码。
-          </p>
-          <button
-            type="button"
-            className="mt-6 inline-flex items-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-shell transition hover:bg-ink/90"
-            onClick={() => sessionMutation.mutate()}
-          >
-            <ShieldCheck size={16} />
-            {sessionMutation.isPending ? "正在打开会话..." : "启动 Boss 专用会话"}
-          </button>
-          {bossSessionQuery.data ? (
-            <p className="mt-3 text-sm text-ink/80">
-              当前会话状态：
-              <span className="font-semibold">
-                {bossSessionQuery.data.active ? " 已激活" : " 未激活"}
-              </span>
-              <span className="ml-2 text-slate">({pillLabel("boss")})</span>
-            </p>
-          ) : null}
+          <div className="flex items-start gap-3">
+            <div className="rounded-2xl bg-shell p-3 text-ember">
+              <Layers3 size={20} />
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.24em] text-ember">
+                模块边界
+              </p>
+              <p className="mt-3 font-display text-4xl italic text-ink">
+                每个平台都是独立模块
+              </p>
+              <p className="mt-4 text-sm leading-7 text-slate">
+                公共层只保留平台注册、能力声明和统一入口，不再把某个平台的登录、
+                反检测和会话策略写死在主分支里。
+              </p>
+            </div>
+          </div>
         </section>
       </header>
 
@@ -184,11 +151,9 @@ export function SetupPage() {
           </p>
           <label className="mt-5 flex cursor-pointer flex-col items-center justify-center rounded-[28px] border border-dashed border-ink/20 bg-paper px-6 py-12 text-center transition hover:border-ink/40">
             <UploadCloud size={34} className="text-ink" />
-            <p className="mt-4 font-medium text-ink">
-              上传 PDF 或 DOCX 简历
-            </p>
+            <p className="mt-4 font-medium text-ink">上传 PDF 或 DOCX 简历</p>
             <p className="mt-2 text-sm text-slate">
-              解析以本地流程为主。你可以在导入后手动修正每一个结构化字段。
+              解析在本地完成。导入后你仍然可以逐项修正结构化字段。
             </p>
             <input
               type="file"
@@ -197,6 +162,7 @@ export function SetupPage() {
               onChange={handleUpload}
             />
           </label>
+
           {uploadMutation.isPending ? (
             <p className="mt-4 text-sm text-slate">正在解析简历...</p>
           ) : null}
@@ -208,7 +174,7 @@ export function SetupPage() {
 
           <div className="mt-6 rounded-[24px] border border-ink/10 bg-paper p-4">
             <p className="text-xs uppercase tracking-[0.2em] text-slate">
-              已接入平台
+              已注册平台模块
             </p>
             <div className="mt-3 space-y-3">
               {platformsQuery.data?.map((platform) => (
@@ -216,14 +182,24 @@ export function SetupPage() {
                   key={platform.platform}
                   className="rounded-2xl border border-ink/10 bg-shell px-4 py-3"
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-3">
                     <p className="font-semibold text-ink">{platform.label}</p>
                     <p className="text-xs uppercase tracking-[0.18em] text-slate">
                       规则包 {platform.rule_pack_version}
                     </p>
                   </div>
                   <p className="mt-2 text-sm text-slate">
-                    搜索：{platform.search_supported ? "支持" : "不支持"} · 浏览：{platform.review_open_supported ? "支持" : "不支持"} · 引导投递：{platform.guided_apply_supported ? "支持" : "不支持"}
+                    搜索：{platform.search_supported ? "支持" : "未启用"} · 浏览：
+                    {platform.review_open_supported ? "支持" : "未启用"} · 引导投递：
+                    {platform.guided_apply_supported ? "支持" : "未启用"}
+                  </p>
+                  <p className="mt-1 text-sm text-slate">
+                    会话模块：
+                    {platform.session_supported
+                      ? platform.session_required
+                        ? "需要独立会话"
+                        : "可选"
+                      : "无"}
                   </p>
                 </div>
               ))}
@@ -237,7 +213,7 @@ export function SetupPage() {
               ["姓名", "full_name"],
               ["岗位标题", "headline"],
               ["目标岗位", "target_roles"],
-              ["期望城市", "preferred_cities"],
+              ["目标城市", "preferred_cities"],
               ["薪资下限", "salary_floor"],
               ["工作年限", "years_experience"],
               ["学历", "degree"],

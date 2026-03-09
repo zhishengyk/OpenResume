@@ -24,7 +24,7 @@ export function HistoryPage() {
       api.setEmergencyStop(!appStateQuery.data?.emergency_stop_active),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["app-state"] });
-      queryClient.invalidateQueries({ queryKey: ["risk-status", "boss"] });
+      queryClient.invalidateQueries({ queryKey: ["risk-status"] });
     },
   });
 
@@ -46,10 +46,11 @@ export function HistoryPage() {
                 紧急停止
               </p>
               <p className="mt-3 font-display text-4xl italic text-ink">
-                立即终止所有引导动作。
+                立刻终止所有引导动作
               </p>
               <p className="mt-4 text-sm leading-7 text-slate">
-                当页面结构异常、出现验证页，或你不希望系统继续推进任何队列中的动作时，请立刻启用急停。
+                页面结构异常、出现验证页，或者你不希望系统继续推进任何排队动作时，
+                可以直接在这里拉起急停。
               </p>
               <button
                 type="button"

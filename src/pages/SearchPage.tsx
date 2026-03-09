@@ -1,15 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Search as SearchIcon, ShieldAlert } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { splitCommaValues } from "../lib/utils";
-import type { AutomationMode } from "../types";
+import type { AutomationMode, PlatformCapability } from "../types";
 
 const modeCards: Array<{
   mode: AutomationMode;
   title: string;
   body: string;
+  capabilityFlag?: "review_open_supported" | "guided_apply_supported";
 }> = [
   {
     mode: "recommend_only",
@@ -19,20 +20,31 @@ const modeCards: Array<{
   {
     mode: "review_in_browser",
     title: "浏览职位",
-    body: "在专用浏览器会话中打开职位页面，由你自己掌控浏览和判断过程。",
+    body: "打开职位详情页，由你自己判断是否继续。",
+    capabilityFlag: "review_open_supported",
   },
   {
     mode: "guided_apply",
     title: "引导投递",
-    body: "自动推进到投递流程并尽量复用资料，但会在最终提交前停止。",
+    body: "允许模块帮你推进流程，但仍会在最终提交前停止。",
+    capabilityFlag: "guided_apply_supported",
   },
 ];
+
+function supportsMode(capability: PlatformCapability | null, mode: AutomationMode) {
+  const card = modeCards.find((entry) => entry.mode === mode);
+  if (!card || !card.capabilityFlag) {
+    return true;
+  }
+
+  return Boolean(capability?.[card.capabilityFlag]);
+}
 
 export function SearchPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const [platform, setPlatform] = useState("boss");
+  const [platform, setPlatform] = useState("");
   const [mode, setMode] = useState<AutomationMode>("recommend_only");
   const [jobTargets, setJobTargets] = useState("前端工程师, 全栈工程师");
   const [cities, setCities] = useState("上海, 杭州");
@@ -41,32 +53,63 @@ export function SearchPage() {
     "React, TypeScript, Node.js",
   );
 
+  const platformsQuery = useQuery({
+    queryKey: ["platforms"],
+    queryFn: api.getPlatforms,
+  });
   const appStateQuery = useQuery({
     queryKey: ["app-state"],
     queryFn: api.getAppState,
   });
+
+  useEffect(() => {
+    if (!platformsQuery.data?.length) {
+      return;
+    }
+    if (platform && platformsQuery.data.some((item) => item.platform === platform)) {
+      return;
+    }
+
+    const preferredPlatform =
+      platformsQuery.data.find((item) => item.search_supported) ||
+      platformsQuery.data[0];
+    setPlatform(preferredPlatform.platform);
+  }, [platformsQuery.data, platform]);
+
+  const selectedPlatform =
+    platformsQuery.data?.find((item) => item.platform === platform) || null;
+
+  useEffect(() => {
+    if (!selectedPlatform || supportsMode(selectedPlatform, mode)) {
+      return;
+    }
+    setMode("recommend_only");
+  }, [selectedPlatform, mode]);
+
   const riskStatusQuery = useQuery({
-    queryKey: ["risk-status", "boss"],
-    queryFn: () => api.getRiskStatus("boss"),
+    queryKey: ["risk-status", platform],
+    queryFn: () => api.getRiskStatus(platform),
+    enabled: Boolean(platform),
   });
-  const bossSessionQuery = useQuery({
-    queryKey: ["platform-session", "boss"],
-    queryFn: () => api.getPlatformSession("boss"),
-    enabled: platform === "boss",
-    refetchInterval: platform === "boss" ? 4000 : false,
+  const sessionQuery = useQuery({
+    queryKey: ["platform-session", platform],
+    queryFn: () => api.getPlatformSession(platform),
+    enabled: Boolean(platform && selectedPlatform?.session_supported),
+    refetchInterval:
+      platform && selectedPlatform?.session_supported ? 4000 : false,
   });
 
-  const bossSessionStartMutation = useMutation({
-    mutationFn: () => api.startPlatformSession("boss"),
+  const sessionStartMutation = useMutation({
+    mutationFn: () => api.startPlatformSession(platform),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["platform-session", "boss"] });
+      queryClient.invalidateQueries({ queryKey: ["platform-session", platform] });
     },
   });
 
-  const bossSessionReadyMutation = useMutation({
-    mutationFn: () => api.checkPlatformSessionReady("boss"),
+  const sessionReadyMutation = useMutation({
+    mutationFn: () => api.checkPlatformSessionReady(platform),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["platform-session", "boss"] });
+      queryClient.invalidateQueries({ queryKey: ["platform-session", platform] });
     },
   });
 
@@ -93,23 +136,36 @@ export function SearchPage() {
     },
   });
 
-  const guidedApplyEnabled =
-    appStateQuery.data?.guided_apply_consents.includes(platform);
-  const bossSessionActive = Boolean(bossSessionQuery.data?.active);
-  const bossSessionReady = Boolean(bossSessionQuery.data?.search_ready);
-  const bossNeedsStart = platform === "boss" && !bossSessionActive;
-  const bossNeedsVerification =
-    platform === "boss" && bossSessionActive && !bossSessionReady;
+  const guidedApplyEnabled = Boolean(
+    platform && appStateQuery.data?.guided_apply_consents.includes(platform),
+  );
+  const sessionActive = Boolean(sessionQuery.data?.active);
+  const sessionReady = Boolean(sessionQuery.data?.search_ready);
+  const needsSessionStart = Boolean(
+    selectedPlatform?.session_required && !sessionActive,
+  );
+  const needsSessionReady = Boolean(
+    selectedPlatform?.session_required && sessionActive && !sessionReady,
+  );
 
   const searchErrorMessage =
     searchMutation.isError && searchMutation.error instanceof Error
       ? searchMutation.error.message
       : null;
-  const bossReadyErrorMessage =
-    bossSessionReadyMutation.isError &&
-    bossSessionReadyMutation.error instanceof Error
-      ? bossSessionReadyMutation.error.message
+  const sessionErrorMessage =
+    sessionReadyMutation.isError && sessionReadyMutation.error instanceof Error
+      ? sessionReadyMutation.error.message
       : null;
+
+  const searchDisabled =
+    !selectedPlatform ||
+    !selectedPlatform.search_supported ||
+    searchMutation.isPending ||
+    sessionStartMutation.isPending ||
+    sessionReadyMutation.isPending ||
+    needsSessionStart ||
+    needsSessionReady ||
+    (mode === "guided_apply" && !guidedApplyEnabled);
 
   return (
     <div className="space-y-6">
@@ -118,46 +174,59 @@ export function SearchPage() {
           搜索控制台
         </p>
         <h1 className="mt-3 font-display text-5xl italic text-ink">
-          先找，再看，再谨慎推进。
+          公共层只调度模块，平台细节留在模块内部。
         </h1>
         <p className="mt-4 max-w-3xl text-sm leading-7 text-slate">
-          当前流程刻意保持保守。任何引导动作前都有风险门禁，最终提交动作永远由用户亲自完成。
+          你现在选择的是一个平台注册入口，主分支不会再把某个平台的登录流程、
+          浏览器策略和风控逻辑硬编码进公共页面。
         </p>
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-6">
           <div className="grid gap-4 md:grid-cols-3">
-            {modeCards.map((entry) => (
-              <button
-                type="button"
-                key={entry.mode}
-                onClick={() => setMode(entry.mode)}
-                className={`rounded-[28px] border p-5 text-left shadow-console transition ${
-                  mode === entry.mode
-                    ? "border-ink bg-ink text-shell"
-                    : "border-ink/10 bg-shell/90 text-ink hover:border-ink/20"
-                }`}
-              >
-                <p className="font-display text-3xl italic">{entry.title}</p>
-                <p className="mt-3 text-sm leading-7 opacity-80">{entry.body}</p>
-              </button>
-            ))}
+            {modeCards.map((entry) => {
+              const available = supportsMode(selectedPlatform, entry.mode);
+              return (
+                <button
+                  type="button"
+                  key={entry.mode}
+                  onClick={() => {
+                    if (available) {
+                      setMode(entry.mode);
+                    }
+                  }}
+                  className={`rounded-[28px] border p-5 text-left shadow-console transition ${
+                    mode === entry.mode
+                      ? "border-ink bg-ink text-shell"
+                      : available
+                        ? "border-ink/10 bg-shell/90 text-ink hover:border-ink/20"
+                        : "cursor-not-allowed border-ink/10 bg-shell/60 text-slate"
+                  }`}
+                >
+                  <p className="font-display text-3xl italic">{entry.title}</p>
+                  <p className="mt-3 text-sm leading-7 opacity-80">{entry.body}</p>
+                </button>
+              );
+            })}
           </div>
 
           <div className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
             <div className="grid gap-5 md:grid-cols-2">
               <label className="space-y-2">
                 <span className="text-xs uppercase tracking-[0.2em] text-slate">
-                  平台
+                  平台模块
                 </span>
                 <select
                   value={platform}
                   onChange={(event) => setPlatform(event.target.value)}
                   className="w-full rounded-2xl border border-ink/10 bg-paper px-4 py-3 text-sm text-ink outline-none transition focus:border-ink/30"
                 >
-                  <option value="boss">Boss 直聘</option>
-                  <option value="liepin">猎聘（后续接入）</option>
+                  {platformsQuery.data?.map((item) => (
+                    <option key={item.platform} value={item.platform}>
+                      {item.label}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label className="space-y-2">
@@ -207,35 +276,37 @@ export function SearchPage() {
             </label>
 
             <div className="mt-6 flex flex-wrap gap-3">
-              {platform === "boss" ? (
+              {selectedPlatform?.session_supported ? (
                 <button
                   type="button"
                   className="rounded-full border border-ink/10 bg-shell px-6 py-3 text-sm font-semibold text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-60"
-                  onClick={() => bossSessionStartMutation.mutate()}
-                  disabled={bossSessionStartMutation.isPending}
+                  onClick={() => sessionStartMutation.mutate()}
+                  disabled={sessionStartMutation.isPending}
                 >
-                  {bossSessionStartMutation.isPending
-                    ? "正在打开 Boss 会话..."
-                    : "启动 / 重新打开 Boss 会话"}
+                  {sessionStartMutation.isPending
+                    ? "正在打开平台会话..."
+                    : "启动 / 重新打开平台会话"}
                 </button>
               ) : null}
 
-              {platform === "boss" ? (
+              {selectedPlatform?.session_supported ? (
                 <button
                   type="button"
                   className="rounded-full border border-ink/10 bg-shell px-6 py-3 text-sm font-semibold text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-60"
-                  onClick={() => bossSessionReadyMutation.mutate()}
+                  onClick={() => sessionReadyMutation.mutate()}
                   disabled={
-                    bossSessionReadyMutation.isPending || bossSessionStartMutation.isPending
+                    sessionReadyMutation.isPending || sessionStartMutation.isPending
                   }
                 >
-                  {bossSessionReadyMutation.isPending
-                    ? "正在检查 Boss 会话..."
-                    : "刷新 Boss 会话状态"}
+                  {sessionReadyMutation.isPending
+                    ? "正在检查会话状态..."
+                    : "刷新会话状态"}
                 </button>
               ) : null}
 
-              {mode === "guided_apply" && !guidedApplyEnabled ? (
+              {mode === "guided_apply" &&
+              selectedPlatform?.guided_apply_supported &&
+              !guidedApplyEnabled ? (
                 <button
                   type="button"
                   className="rounded-full bg-ember px-6 py-3 text-sm font-semibold text-shell transition hover:bg-ember/90"
@@ -252,34 +323,35 @@ export function SearchPage() {
                 type="button"
                 className="inline-flex items-center gap-2 rounded-full bg-ink px-6 py-3 text-sm font-semibold text-shell transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:bg-ink/40"
                 onClick={() => searchMutation.mutate()}
-                disabled={
-                  searchMutation.isPending ||
-                  bossSessionStartMutation.isPending ||
-                  bossSessionReadyMutation.isPending ||
-                  bossNeedsStart ||
-                  (mode === "guided_apply" && !guidedApplyEnabled)
-                }
+                disabled={searchDisabled}
               >
                 <SearchIcon size={16} />
                 {searchMutation.isPending ? "正在启动任务..." : "开始搜索任务"}
               </button>
             </div>
 
-            {bossNeedsStart ? (
+            {selectedPlatform && !selectedPlatform.search_supported ? (
               <p className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-ink">
-                还没有可用的 Boss 会话。请先点击“启动 / 重新打开 Boss 会话”，在专用浏览器窗口里登录。
+                当前模块还没有接入真实搜索能力。你可以继续保留它作为占位模块，
+                等后续按同样边界补齐实现。
               </p>
             ) : null}
 
-            {bossNeedsVerification ? (
+            {needsSessionStart ? (
               <p className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-ink">
-                Boss 会话已激活，但还没有完成登录或安全验证。你可以先点击“刷新 Boss 会话状态”，也可以直接点“开始搜索任务”，系统会在提交搜索前再次检查会话状态。
+                当前模块要求独立会话。请先启动平台会话并完成登录。
               </p>
             ) : null}
 
-            {bossReadyErrorMessage ? (
+            {needsSessionReady ? (
+              <p className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-ink">
+                当前模块会话已激活，但还没有通过就绪检查。先完成验证，再开始搜索。
+              </p>
+            ) : null}
+
+            {sessionErrorMessage ? (
               <p className="mt-4 rounded-2xl border border-ember/30 bg-ember/10 px-4 py-3 text-sm leading-6 text-ink">
-                {bossReadyErrorMessage}
+                {sessionErrorMessage}
               </p>
             ) : null}
 
@@ -300,7 +372,7 @@ export function SearchPage() {
                   风险姿态
                 </p>
                 <p className="mt-3 text-sm leading-7 text-slate">
-                  当前版本只支持保守节流、限频和人工接管，不提供隐身伪装、指纹欺骗或反检测能力。
+                  模块可以声明自己的能力边界，但公共层不会帮任何模块默认获取高权限动作。
                 </p>
               </div>
             </div>
@@ -334,19 +406,27 @@ export function SearchPage() {
                 ? new Date(riskStatusQuery.data.cooldown_until).toLocaleString()
                 : "无"}
             </p>
-            {mode === "guided_apply" ? (
-              <div className="mt-5 rounded-[24px] border border-ink/10 bg-paper p-4">
-                <div className="flex items-center gap-2 text-ink">
-                  <AlertTriangle size={16} />
-                  <p className="font-semibold">
-                    引导投递仍然需要你亲自完成最后确认。
-                  </p>
-                </div>
-                <p className="mt-3 text-sm leading-7 text-slate">
-                  系统可以帮你打开流程、预填一部分通用信息，但会在平台最终提交前停止。
+
+            <div className="mt-5 rounded-[24px] border border-ink/10 bg-paper p-4">
+              <div className="flex items-center gap-2 text-ink">
+                <AlertTriangle size={16} />
+                <p className="font-semibold">
+                  {selectedPlatform?.label || "当前模块"} 能力摘要
                 </p>
               </div>
-            ) : null}
+              <p className="mt-3 text-sm leading-7 text-slate">
+                搜索：{selectedPlatform?.search_supported ? "支持" : "未启用"} ·
+                浏览：{selectedPlatform?.review_open_supported ? "支持" : "未启用"} ·
+                引导投递：
+                {selectedPlatform?.guided_apply_supported ? "支持" : "未启用"} ·
+                独立会话：
+                {selectedPlatform?.session_required
+                  ? "必需"
+                  : selectedPlatform?.session_supported
+                    ? "可选"
+                    : "无"}
+              </p>
+            </div>
           </div>
         </div>
       </section>

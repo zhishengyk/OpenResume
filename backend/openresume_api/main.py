@@ -11,7 +11,6 @@ from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
 from .adapters.base import PlatformBlockedError
-from .config import settings
 from .db import get_session, init_db
 from .models import (
     ApplicationAttempt,
@@ -30,7 +29,6 @@ from .schemas import (
     RiskStatusResponse,
     SearchSessionCreate,
 )
-from .services.browser_session import browser_session_service
 from .services.compliance import compliance_service
 from .services.events import event_bus
 from .services.platform_gateway import platform_gateway
@@ -40,19 +38,16 @@ from .services.search import search_service
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
-RECOMMENDED_ACCOUNT_NOTICE = "建议使用独立账号或独立会话目录进行引导投递。"
+RECOMMENDED_ACCOUNT_NOTICE = "建议使用独立的浏览器资料目录，不复用日常登录环境。"
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
-    try:
-        yield
-    finally:
-        await browser_session_service.shutdown()
+    yield
 
 
-app = FastAPI(title="OpenResume 本地接口", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="OpenResume Local API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -88,15 +83,22 @@ def profile_response(profile: CandidateProfile) -> dict:
 
 def platform_session_response(platform: str, state: dict) -> PlatformSessionResponse:
     last_started_at = state.get("last_started_at")
+    if isinstance(last_started_at, str) and last_started_at:
+        last_started_value = datetime.fromisoformat(last_started_at)
+    elif isinstance(last_started_at, datetime):
+        last_started_value = last_started_at
+    else:
+        last_started_value = None
+
     return PlatformSessionResponse(
         platform=platform,
         active=bool(state.get("active")),
         search_ready=bool(state.get("search_ready")),
-        last_started_at=(
-            datetime.fromisoformat(last_started_at) if last_started_at else None
-        ),
+        last_started_at=last_started_value,
         storage_dir=str(state.get("storage_dir") or ""),
-        recommended_account_notice=RECOMMENDED_ACCOUNT_NOTICE,
+        recommended_account_notice=str(
+            state.get("recommended_account_notice") or RECOMMENDED_ACCOUNT_NOTICE
+        ),
     )
 
 
@@ -127,55 +129,27 @@ def match_response(match: JobMatch, job: JobListing) -> JobMatchResponse:
 
 
 async def ensure_platform_search_ready(
-    db: Session,
     *,
     platform: str,
     adapter,
-    success_reason: str,
-    blocked_reason: str,
-    failed_reason: str,
     blocked_hint: str,
 ) -> None:
-    if not hasattr(adapter, "ensure_search_ready"):
-        browser_session_service.set_search_ready(
-            db,
-            platform,
-            True,
-            reason=success_reason,
-        )
+    ensure_search_ready = getattr(adapter, "ensure_search_ready", None)
+    if not callable(ensure_search_ready):
         return
 
     try:
-        await adapter.ensure_search_ready()
+        await ensure_search_ready()
     except PlatformBlockedError as error:
-        browser_session_service.set_search_ready(
-            db,
-            platform,
-            False,
-            reason=blocked_reason,
-        )
         raise HTTPException(
             status_code=409,
             detail=f"{str(error)} {blocked_hint}",
         ) from error
     except Exception as error:
-        browser_session_service.set_search_ready(
-            db,
-            platform,
-            False,
-            reason=failed_reason,
-        )
         raise HTTPException(
             status_code=503,
             detail=f"{platform} 会话检查失败：{error}",
         ) from error
-
-    browser_session_service.set_search_ready(
-        db,
-        platform,
-        True,
-        reason=success_reason,
-    )
 
 
 @app.get("/api/app-state", response_model=AppStateResponse)
@@ -228,6 +202,10 @@ def get_platform_capabilities(platform: str):
 @app.post("/api/platforms/{platform}/session/start", response_model=PlatformSessionResponse)
 async def start_platform_session(platform: str, db: SessionDep):
     adapter = platform_gateway.get(platform)
+    capability = adapter.capability()
+    if not capability.session_supported:
+        raise HTTPException(status_code=409, detail="当前模块不需要平台会话。")
+
     try:
         await adapter.start_session(db)
     except Exception as error:
@@ -241,7 +219,11 @@ async def start_platform_session(platform: str, db: SessionDep):
 
 @app.get("/api/platforms/{platform}/session", response_model=PlatformSessionResponse)
 async def get_platform_session(platform: str, db: SessionDep):
-    state = browser_session_service.state(db, platform)
+    adapter = platform_gateway.get(platform)
+    capability = adapter.capability()
+    if not capability.session_supported:
+        raise HTTPException(status_code=409, detail="当前模块不需要平台会话。")
+    state = await adapter.session_state(db)
     return platform_session_response(platform, state)
 
 
@@ -251,7 +233,11 @@ async def get_platform_session(platform: str, db: SessionDep):
 )
 async def check_platform_session_ready(platform: str, db: SessionDep):
     adapter = platform_gateway.get(platform)
-    state = browser_session_service.state(db, platform)
+    capability = adapter.capability()
+    if not capability.session_supported:
+        raise HTTPException(status_code=409, detail="当前模块不需要平台会话。")
+
+    state = await adapter.session_state(db)
     if not state.get("active"):
         raise HTTPException(
             status_code=409,
@@ -259,18 +245,11 @@ async def check_platform_session_ready(platform: str, db: SessionDep):
         )
 
     await ensure_platform_search_ready(
-        db,
         platform=platform,
         adapter=adapter,
-        success_reason="manual_check_passed",
-        blocked_reason="manual_check_blocked",
-        failed_reason="manual_check_failed",
-        blocked_hint="请先在 Boss 会话窗口里完成登录或验证，然后再刷新会话状态。",
+        blocked_hint="请先在平台会话中完成登录或验证，然后再刷新会话状态。",
     )
-    return platform_session_response(
-        platform,
-        browser_session_service.state(db, platform),
-    )
+    return platform_session_response(platform, await adapter.session_state(db))
 
 
 @app.get("/api/platforms/{platform}/risk-status", response_model=RiskStatusResponse)
@@ -284,39 +263,41 @@ async def create_search_session(payload: SearchSessionCreate, db: SessionDep):
     capability = adapter.capability()
     if not capability.search_supported:
         raise HTTPException(status_code=409, detail="当前平台暂不支持搜索能力。")
+    if payload.mode == "review_in_browser" and not capability.review_open_supported:
+        raise HTTPException(status_code=409, detail="当前平台暂不支持职位浏览。")
+    if payload.mode == "guided_apply" and not capability.guided_apply_supported:
+        raise HTTPException(status_code=409, detail="当前平台暂不支持引导投递。")
     if (
         payload.mode == "guided_apply"
         and not compliance_service.has_guided_apply_consent(db, payload.platform)
     ):
         raise HTTPException(status_code=403, detail="请先完成引导投递风险确认。")
 
-    if payload.platform == "boss" and settings.boss_search_mode.lower().strip() == "live":
+    if capability.session_required:
         state = await adapter.session_state(db)
         if not state.get("active"):
             raise HTTPException(
                 status_code=409,
-                detail=(
-                    "请先启动 Boss 会话，并在会话浏览器中完成登录或验证。"
-                ),
+                detail="请先启动平台会话，并完成登录或验证。",
             )
-        await ensure_platform_search_ready(
-            db,
-            platform=payload.platform,
-            adapter=adapter,
-            success_reason="search_gate_passed",
-            blocked_reason="search_gate_blocked",
-            failed_reason="search_gate_failed",
-            blocked_hint="请先点击“刷新 Boss 会话状态”，确认通过后再开始搜索。",
-        )
+        if not state.get("search_ready"):
+            await ensure_platform_search_ready(
+                platform=payload.platform,
+                adapter=adapter,
+                blocked_hint="请先完成会话验证，再开始搜索。",
+            )
+            state = await adapter.session_state(db)
+            if not state.get("search_ready"):
+                raise HTTPException(status_code=409, detail="平台会话尚未通过就绪检查。")
+
     return await search_service.create_session(db, payload)
 
 
 @app.get("/api/search-sessions")
 def list_search_sessions(db: SessionDep):
-    sessions = db.exec(
+    return db.exec(
         select(SearchSession).order_by(SearchSession.created_at.desc())
     ).all()
-    return sessions
 
 
 @app.get("/api/search-sessions/{session_id}")
@@ -372,6 +353,9 @@ async def open_review(job_id: str, db: SessionDep):
     if not job:
         raise HTTPException(status_code=404, detail="职位不存在。")
     adapter = platform_gateway.get(job.platform)
+    capability = adapter.capability()
+    if not capability.review_open_supported:
+        raise HTTPException(status_code=409, detail="当前平台暂不支持职位浏览。")
     message = await adapter.open_review(job.url)
     return {"message": message}
 
@@ -381,19 +365,22 @@ async def guided_apply(job_id: str, db: SessionDep):
     job = db.get(JobListing, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="职位不存在。")
+    adapter = platform_gateway.get(job.platform)
+    capability = adapter.capability()
+    if not capability.guided_apply_supported:
+        raise HTTPException(status_code=409, detail="当前平台暂不支持引导投递。")
     if not compliance_service.has_guided_apply_consent(db, job.platform):
         raise HTTPException(status_code=403, detail="请先完成引导投递风险确认。")
 
     risk_control_service.ensure_guided_apply_allowed(db, job.platform)
     profile = profile_service.load_or_create(db)
-    adapter = platform_gateway.get(job.platform)
 
     attempt = ApplicationAttempt(
         job_id=job.id,
         platform=job.platform,
         mode="guided_apply",
         status="running",
-        message="正在准备专用投递流程，并会在最终提交前停止。",
+        message="正在准备引导投递流程，并会在最终提交前停止。",
     )
     db.add(attempt)
     db.commit()

@@ -23,6 +23,13 @@ export function MatchCard({ match }: MatchCardProps) {
     },
   });
 
+  const actionErrorMessage =
+    reviewMutation.isError && reviewMutation.error instanceof Error
+      ? reviewMutation.error.message
+      : guidedApplyMutation.isError && guidedApplyMutation.error instanceof Error
+        ? guidedApplyMutation.error.message
+        : null;
+
   return (
     <article className="rounded-[30px] border border-ink/10 bg-shell/90 p-6 shadow-console">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -129,6 +136,12 @@ export function MatchCard({ match }: MatchCardProps) {
           打开原始链接
         </button>
       </div>
+
+      {actionErrorMessage ? (
+        <p className="mt-4 rounded-2xl border border-ember/30 bg-ember/10 px-4 py-3 text-sm leading-6 text-ink">
+          {actionErrorMessage}
+        </p>
+      ) : null}
 
       <p className="mt-4 text-xs uppercase tracking-[0.18em] text-slate">
         建议模式：{modeLabel(match.llm_score ? "guided_apply" : "review_in_browser")}

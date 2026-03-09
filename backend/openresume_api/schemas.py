@@ -30,6 +30,8 @@ class PlatformCapabilityResponse(BaseModel):
     detail_parse_supported: bool
     review_open_supported: bool
     guided_apply_supported: bool
+    session_supported: bool = False
+    session_required: bool = False
     rule_pack_version: str
 
 

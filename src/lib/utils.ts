@@ -14,34 +14,34 @@ export function splitCommaValues(input: string) {
 
 export function modeLabel(mode: string) {
   if (mode === "guided_apply") {
-    return "\u5f15\u5bfc\u6295\u9012";
+    return "引导投递";
   }
 
   if (mode === "review_in_browser") {
-    return "\u6d4f\u89c8\u804c\u4f4d";
+    return "浏览职位";
   }
 
-  return "\u4ec5\u63a8\u8350";
+  return "仅推荐";
 }
 
 export function pillLabel(label: string) {
   const lowered = label.toLowerCase();
   const mapping: Record<string, string> = {
-    armed: "\u5df2\u5c31\u7eea",
-    blocked: "\u5df2\u963b\u585e",
-    ready: "\u5df2\u5b8c\u6210",
-    running: "\u8fdb\u884c\u4e2d",
-    failed: "\u5931\u8d25",
-    queued: "\u6392\u961f\u4e2d",
-    prepared: "\u5df2\u51c6\u5907",
-    cancelled: "\u5df2\u53d6\u6d88",
-    draft: "\u8349\u7a3f",
-    boss: "Boss\u76f4\u8058",
-    liepin: "\u730e\u8058",
-    fresh: "\u65b0\u5206\u6790",
-    cached: "\u7f13\u5b58",
-    "local api": "\u672c\u5730\u63a5\u53e3",
-    "boss adapter": "Boss\u9002\u914d\u5668",
+    armed: "已就绪",
+    blocked: "已阻塞",
+    ready: "已完成",
+    running: "进行中",
+    failed: "失败",
+    queued: "排队中",
+    prepared: "已准备",
+    cancelled: "已取消",
+    draft: "草稿",
+    demo: "演示模块",
+    liepin: "猎聘",
+    fresh: "新分析",
+    cached: "缓存",
+    "local api": "本地接口",
+    "platform modules": "平台模块",
   };
 
   return mapping[lowered] || label;
@@ -62,4 +62,3 @@ export function statusTone(status: string) {
       return "bg-ink/10 text-ink";
   }
 }
-

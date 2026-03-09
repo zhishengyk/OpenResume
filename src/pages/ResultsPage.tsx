@@ -81,7 +81,7 @@ export function ResultsPage() {
               搜索任务
             </p>
             <h1 className="mt-3 font-display text-5xl italic text-ink">
-              先看清流程，再决定是否进入平台。
+              先看流程，再决定要不要继续进入模块动作。
             </h1>
           </div>
           {sessionQuery.data ? <StatusPill>{sessionQuery.data.status}</StatusPill> : null}
@@ -99,17 +99,17 @@ export function ResultsPage() {
             <div className="max-w-3xl">
               <p className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-ember">
                 <AlertTriangle size={16} />
-                已命中平台验证
+                命中人工验证
               </p>
               <h2 className="mt-3 font-display text-3xl italic text-ink">
-                先在浏览器里完成人工验证，再回来重试这次搜索。
+                先完成验证，再把这次任务继续跑完。
               </h2>
               <p className="mt-3 text-sm leading-7 text-slate">
                 {sessionQuery.data?.blocked_reason ||
                   "系统已暂停当前搜索，避免在未验证状态下继续请求平台。"}
               </p>
               <p className="mt-3 text-sm leading-7 text-slate">
-                命中 blocked 后请先手动打开验证页，完成登录/验证后再点击“验证后重试”。系统会先做验证门禁检查，通过后才会真正重跑搜索任务。
+                点击“重新打开验证页”后，先在浏览器里完成验证，再点击“验证后重试”。
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -120,7 +120,9 @@ export function ResultsPage() {
                 disabled={openVerificationMutation.isPending || !sessionId}
               >
                 <ShieldCheck size={16} />
-                {openVerificationMutation.isPending ? "正在打开验证页..." : "重新打开验证页"}
+                {openVerificationMutation.isPending
+                  ? "正在打开验证页..."
+                  : "重新打开验证页"}
               </button>
               <button
                 type="button"
@@ -140,17 +142,17 @@ export function ResultsPage() {
         <MetricCard
           label="可见岗位数"
           value={String(matchesQuery.data?.length ?? 0)}
-          hint="先展示规则分卡片，再逐步补充模型解释和风险摘要。"
+          hint="规则筛选会先出结果，模型说明再逐步补齐。"
         />
         <MetricCard
           label="当前平台"
           value={sessionQuery.data ? pillLabel(sessionQuery.data.platform) : "--"}
-          hint="平台适配器按能力边界开放，不会默认拥有全部高权限动作。"
+          hint="平台能力由模块声明，公共层只负责调度。"
         />
         <MetricCard
           label="最高分"
           value={topMatch ? String(Math.round(topMatch.final_score)) : "--"}
-          hint="最终得分由规则过滤和模型分析共同构成。"
+          hint="最终分数由规则过滤和模型分析共同构成。"
         />
       </section>
 
@@ -164,8 +166,8 @@ export function ResultsPage() {
           ) : (
             <div className="rounded-[32px] border border-ink/10 bg-shell/90 p-8 text-sm leading-7 text-slate shadow-console">
               {isRunning
-                ? "第一阶段规则筛选完成后，岗位卡片会先出现在这里；随后模型解释会逐步补充到卡片详情中。"
-                : "当前还没有可展示的岗位卡片。若任务刚进入 blocked，请先完成人工验证后再重试搜索。"}
+                ? "规则筛选完成后，岗位卡片会先出现在这里；随后模型解释会继续补进详情。"
+                : "当前还没有可展示的岗位卡片。若任务进入 blocked，请先完成验证后再重试。"}
             </div>
           )}
         </div>

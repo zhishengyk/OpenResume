@@ -3,15 +3,16 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 import hashlib
+import webbrowser
 
 from fastapi import HTTPException
 from sqlmodel import Session, delete, select
 
 from .. import db as db_module
 from ..adapters.base import PlatformBlockedError
+from ..config import settings
 from ..models import AppSetting, CandidateProfile, JobListing, JobMatch, SearchSession
 from ..schemas import SearchSessionCreate
-from .browser_session import browser_session_service
 from .events import event_bus
 from .llm import llm_service
 from .matching import matching_service
@@ -66,11 +67,7 @@ class SearchService:
             cities=payload.cities,
             salary_floor=payload.salary_floor,
             must_have_keywords=payload.must_have_keywords,
-            summary=(
-                "\u641c\u7d22\u4efb\u52a1\u5df2\u542f\u52a8\u3002"
-                "\u7cfb\u7edf\u4f1a\u5148\u8fd4\u56de\u89c4\u5219\u7b5b\u9009\u7ed3\u679c\uff0c"
-                "\u518d\u8865\u5145\u7f13\u5b58\u6216\u65b0\u751f\u6210\u7684\u6a21\u578b\u8bf4\u660e\u3002"
-            ),
+            summary="搜索任务已启动。系统会先返回规则筛选结果，再补充模型说明。",
         )
         db.add(session)
         db.commit()
@@ -85,20 +82,16 @@ class SearchService:
             blocked_at=None,
             last_retry_at=None,
         )
-        event_bus.publish(
-            session.id,
-            "search_started",
-            "\u641c\u7d22\u4efb\u52a1\u5df2\u521b\u5efa\u3002",
-        )
+        event_bus.publish(session.id, "search_started", "搜索任务已创建。")
         asyncio.create_task(self._run_pipeline(session.id, payload))
         return session
 
     async def retry_session(self, db: Session, session_id: str) -> SearchSession:
         session = db.get(SearchSession, session_id)
         if not session:
-            raise HTTPException(status_code=404, detail="\u641c\u7d22\u4efb\u52a1\u4e0d\u5b58\u5728\u3002")
+            raise HTTPException(status_code=404, detail="搜索任务不存在。")
         if session.status == "running":
-            raise HTTPException(status_code=409, detail="\u5f53\u524d\u641c\u7d22\u4efb\u52a1\u4ecd\u5728\u8fd0\u884c\u4e2d\u3002")
+            raise HTTPException(status_code=409, detail="当前搜索任务仍在运行中。")
 
         adapter = platform_gateway.get(session.platform)
         if hasattr(adapter, "ensure_search_ready"):
@@ -107,21 +100,14 @@ class SearchService:
             except PlatformBlockedError as error:
                 raise HTTPException(
                     status_code=409,
-                    detail=(
-                        f"{str(error)} "
-                        "\u8bf7\u5148\u6253\u5f00\u9a8c\u8bc1\u9875\u5e76\u5b8c\u6210\u767b\u5f55/\u9a8c\u8bc1\uff0c"
-                        "\u7136\u540e\u518d\u70b9\u51fb\u201c\u9a8c\u8bc1\u540e\u91cd\u8bd5\u201d\u3002"
-                    ),
+                    detail=f"{str(error)} 请先完成人工验证后再重试。",
                 ) from error
 
         meta = self._get_session_meta(db, session_id)
         retry_count = int(meta.get("retry_count") or 0) + 1
         session.status = "running"
         session.blocked_reason = None
-        session.summary = (
-            "\u6b63\u5728\u91cd\u8bd5\u5f53\u524d\u641c\u7d22\u4efb\u52a1\u3002"
-            "\u7cfb\u7edf\u4f1a\u4f18\u5148\u590d\u7528\u5df2\u6210\u529f\u7f13\u5b58\u7684 Boss \u641c\u7d22\u7ed3\u679c\u3002"
-        )
+        session.summary = "正在重试当前搜索任务。系统会尽量复用已经完成的中间结果。"
         session.updated_at = datetime.utcnow()
         db.add(session)
         db.commit()
@@ -139,31 +125,29 @@ class SearchService:
         event_bus.publish(
             session_id,
             "search_restarted",
-            f"\u7b2c {retry_count} \u6b21\u91cd\u8bd5\u5df2\u542f\u52a8\u3002",
+            f"第 {retry_count} 次重试已启动。",
             {"retry_count": retry_count},
         )
-        asyncio.create_task(self._run_pipeline(session.id, self._payload_from_session(session)))
+        asyncio.create_task(
+            self._run_pipeline(session.id, self._payload_from_session(session))
+        )
         return session
 
     async def reopen_verification(self, db: Session, session_id: str) -> dict[str, str]:
         session = db.get(SearchSession, session_id)
         if not session:
-            raise HTTPException(status_code=404, detail="\u641c\u7d22\u4efb\u52a1\u4e0d\u5b58\u5728\u3002")
+            raise HTTPException(status_code=404, detail="搜索任务不存在。")
 
         meta = self._get_session_meta(db, session_id)
         verification_url = meta.get("verification_url")
         if not verification_url:
             raise HTTPException(
                 status_code=409,
-                detail="\u5f53\u524d\u641c\u7d22\u4efb\u52a1\u6ca1\u6709\u53ef\u7528\u7684\u9a8c\u8bc1\u9875\u94fe\u63a5\u3002",
+                detail="当前搜索任务没有可用的验证页链接。",
             )
 
-        await browser_session_service.open_url(
-            db,
-            session.platform,
-            str(verification_url),
-            "search_verification",
-        )
+        if not settings.disable_browser_open:
+            webbrowser.open(str(verification_url))
         self._set_session_meta(
             db,
             session_id,
@@ -173,14 +157,9 @@ class SearchService:
         event_bus.publish(
             session_id,
             "verification_opened",
-            "\u5df2\u91cd\u65b0\u6253\u5f00 Boss \u9a8c\u8bc1\u9875\uff0c\u8bf7\u5b8c\u6210\u9a8c\u8bc1\u540e\u518d\u70b9\u51fb\u91cd\u8bd5\u641c\u7d22\u3002",
+            "已重新打开验证页，请完成验证后再重试搜索。",
         )
-        return {
-            "message": (
-                "\u5df2\u91cd\u65b0\u6253\u5f00 Boss \u9a8c\u8bc1\u9875\uff0c"
-                "\u8bf7\u5148\u5728\u6d4f\u89c8\u5668\u4e2d\u5b8c\u6210\u9a8c\u8bc1\u3002"
-            )
-        }
+        return {"message": "已重新打开验证页，请先在浏览器中完成验证。"}
 
     async def _run_pipeline(self, session_id: str, payload: SearchSessionCreate) -> None:
         with Session(db_module.engine) as db:
@@ -197,10 +176,7 @@ class SearchService:
                 event_bus.publish(
                     session_id,
                     "fetching_jobs",
-                    (
-                        "\u6b63\u5728\u6293\u53d6\u804c\u4f4d\uff0c"
-                        "\u5e76\u6309\u4fdd\u5b88\u8282\u6d41\u7b56\u7565\u5904\u7406 Boss \u8bf7\u6c42\u3002"
-                    ),
+                    "正在抓取职位并执行规则过滤。",
                 )
                 raw_jobs = await adapter.search_jobs(payload, profile)
                 rule_matches = matching_service.filter_and_score(
@@ -259,10 +235,7 @@ class SearchService:
                 event_bus.publish(
                     session_id,
                     "rule_ranked",
-                    (
-                        f"\u89c4\u5219\u7b5b\u9009\u5b8c\u6210\uff0c"
-                        f"\u5f53\u524d\u53ef\u89c1\u5c97\u4f4d {len(stored_jobs)} \u4e2a\u3002"
-                    ),
+                    f"规则筛选完成，当前可见岗位 {len(stored_jobs)} 个。",
                     {"matches": len(stored_jobs)},
                 )
 
@@ -313,10 +286,7 @@ class SearchService:
                 session.status = "ready"
                 session.updated_at = datetime.utcnow()
                 session.blocked_reason = None
-                session.summary = (
-                    "\u641c\u7d22\u4efb\u52a1\u5df2\u5b8c\u6210\uff0c"
-                    "\u7ed3\u679c\u4e2d\u5305\u542b\u771f\u5b9e Boss \u804c\u4f4d\u94fe\u63a5\u3002"
-                )
+                session.summary = "搜索任务已完成，可以开始查看结果。"
                 db.add(session)
                 db.commit()
                 self._set_session_meta(
@@ -330,17 +300,10 @@ class SearchService:
                 event_bus.publish(
                     session_id,
                     "llm_enriched",
-                    (
-                        f"\u6a21\u578b\u8bf4\u660e\u5df2\u8865\u5145\u5230"
-                        f"\u524d {len(top_jobs)} \u4e2a\u5c97\u4f4d\u3002"
-                    ),
+                    f"模型补充说明已覆盖前 {len(top_jobs)} 个岗位。",
                     {"matches": len(top_jobs)},
                 )
-                event_bus.publish(
-                    session_id,
-                    "ready",
-                    "\u641c\u7d22\u4efb\u52a1\u5df2\u5b8c\u6210\uff0c\u53ef\u5f00\u59cb\u67e5\u770b\u7ed3\u679c\u3002",
-                )
+                event_bus.publish(session_id, "ready", "搜索任务已完成，可开始查看结果。")
             except PlatformBlockedError as error:
                 detail = str(error)
                 verification_url = error.verification_url
@@ -362,9 +325,7 @@ class SearchService:
 
                 if verification_url:
                     session.summary = (
-                        f"{detail}"
-                        "\u8bf7\u5148\u70b9\u51fb\u201c\u91cd\u65b0\u6253\u5f00\u9a8c\u8bc1\u9875\u201d\u5b8c\u6210\u767b\u5f55/\u9a8c\u8bc1\uff0c\u518d"
-                        "\u70b9\u51fb\u201c\u9a8c\u8bc1\u540e\u91cd\u8bd5\u201d\u3002"
+                        f"{detail} 请先重新打开验证页，完成验证后再重试。"
                     )
                 else:
                     session.summary = detail
@@ -385,7 +346,7 @@ class SearchService:
                     },
                 )
             except Exception as error:
-                detail = str(error) or "\u641c\u7d22\u4efb\u52a1\u5931\u8d25\u3002"
+                detail = str(error) or "搜索任务失败。"
                 session.status = "failed"
                 session.blocked_reason = None
                 session.summary = detail

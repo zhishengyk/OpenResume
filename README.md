@@ -1,395 +1,58 @@
 # OpenResume
 
-OpenResume 是一个面向 Windows 的桌面端求职辅助工具，用简历驱动职位检索、匹配分析和用户主导的引导投递。
+OpenResume is a local desktop job-search workbench built with `Electron + React + FastAPI`.
 
-这个仓库当前提供的是一条“安全收敛”的开源主线：
+## Current Branch State
 
-- 不提供自动提交简历
-- 不提供验证码绕过
-- 不提供 stealth、指纹伪装或反检测能力
-- 所有高风险动作都要求用户自己完成最后确认
+`main` now keeps only the modular platform skeleton:
 
-项目采用 `Electron + React + FastAPI` 的本地桌面架构。普通用户未来可以通过安装包使用，开发者当前可以直接从源码启动。
+- `demo`: a local fixture-backed module used for search, matching, review, and safe guided-flow testing
+- `liepin`: a placeholder module with capability metadata only
 
-## 这个项目解决什么问题
+The previous Boss login/search work has been preserved on the local branch:
 
-投简历最耗时间的部分，通常不是“点发送”，而是：
+- `archive/boss-login`
 
-- 从简历里整理出岗位关键词、城市偏好、薪资要求和必须条件
-- 在招聘平台里反复搜索
-- 快速判断 JD 是否适合
-- 从一堆职位中挑出值得看、值得投的岗位
-- 在风险可控的前提下，把投递流程推进到用户确认前
+## Design Goal
 
-OpenResume 的目标是把这条链路做成一个本地工作台，让用户先看清岗位匹配，再决定是否进入投递流程。
+Each platform belongs to its own module.
 
-## 当前功能
+- Platform-specific logic stays inside `backend/openresume_api/adapters/<platform>.py`
+- Public APIs only depend on capability metadata and a shared adapter contract
+- No platform-specific browser/session strategy is hard-coded in the main branch
 
-### 1. 简历导入与候选人画像
+This keeps the codebase ready for future integrations while keeping the default branch small and low-coupling.
 
-- 支持上传 `PDF` 或 `DOCX` 简历
-- 从简历中提取基础信息，生成结构化候选人画像
-- 可在界面中手动编辑：
-  - 姓名
-  - 职位标题
-  - 目标岗位
-  - 目标城市
-  - 薪资下限
-  - 工作年限
-  - 学历
-  - 技能关键词
-  - 必须命中关键词
-  - 个人摘要
+## Development
 
-这一步的设计目标是：后续搜索和匹配始终围绕“用户确认后的画像”执行，而不是盲信模型抽取结果。
+Install frontend dependencies:
 
-### 2. 多模式搜索流程
-
-当前前端提供三种模式：
-
-- `recommend_only`
-  - 只做搜索、过滤、排序和匹配说明
-  - 不进入平台操作流程
-- `review_in_browser`
-  - 打开职位原始页面，由用户自行查看
-- `guided_apply`
-  - 帮用户把流程推进到投递页面，并尽量复用资料
-  - 最终提交必须由用户亲自点击
-
-### 3. 职位搜索与结果卡片
-
-当前仓库已经实现完整的搜索任务链路和结果页交互：
-
-- 创建搜索任务
-- 实时展示任务状态和时间线
-- 规则过滤职位
-- 对 Top 结果补充模型解释
-- 输出可点击的职位卡片
-
-结果卡片会展示：
-
-- 平台
-- 职位名
-- 公司名
-- 城市
-- 薪资
-- 最终匹配分
-- 匹配亮点
-- 缺失关键词
-- 风险标签
-- JD 摘要
-- 匹配说明
-
-### 4. 规则分 + 模型补充说明
-
-当前实现采用两段式匹配：
-
-- 第一段：规则过滤和规则打分
-- 第二段：对 Top 10 职位补充启发式“LLM”分析结果
-
-系统会先给出规则分，再补充：
-
-- 匹配亮点
-- 缺失关键词
-- 风险提示
-- 中文匹配摘要
-
-同时已经实现 LLM 分析缓存，缓存键基于：
-
-- `platform`
-- `external_job_id`
-- `jd_hash`
-
-这样同一条 JD 不会重复计算。
-
-### 5. 风险门禁与安全控制
-
-这是当前仓库最重要的边界。
-
-已实现的风险控制包括：
-
-- 首次启动免责声明
-- `guided_apply` 单独风险确认
-- 每小时次数限制
-- 每日次数限制
-- 平台冷却时间
-- 风险事件计数
-- 全局紧急停止
-
-当用户启用高风险动作时，系统会优先检查这些条件，而不是默认继续执行。
-
-### 6. 平台能力矩阵
-
-平台层从一开始就按适配器设计，不把 Boss 写死在全系统里。
-
-当前状态：
-
-- `BossAdapter`
-  - 已实现能力骨架
-  - 可展示平台能力
-  - 可参与搜索任务流程
-  - 可打开职位页
-  - 可进入引导投递入口
-- `LiepinAdapter`
-  - 已预留接口
-  - 当前是占位实现，还没有接通真实平台能力
-
-### 7. 本地独立会话目录
-
-应用不会读取用户日常浏览器的主 Profile。
-
-当前设计是：
-
-- 为每个平台维护独立的本地会话目录
-- 不保存平台密码
-- 只保存本地会话状态
-- 通过桌面端拉起浏览器流程
-
-这样做的目的，是把求职辅助流程和用户平时浏览行为隔离开。
-
-### 8. 规则包覆盖
-
-当前已经支持规则包加载：
-
-- 内置默认规则包
-- 支持从本地覆盖规则文件
-
-这为后续处理 DOM 漂移和平台适配变更预留了入口。
-
-## 当前仓库状态说明
-
-这部分很重要。
-
-当前仓库已经完成的是“可运行的安全架构骨架 + 本地工作流原型”，不是已经打通真实 Boss 线上抓取和真实自动投递的正式产品。
-
-当前真实状态是：
-
-- 前后端和 Electron 桌面壳可启动
-- 简历导入、候选人画像编辑、搜索任务、结果页、历史页可用
-- Boss 搜索默认优先走真实官方搜索接口，并保存真实 `job_detail` URL
-- 命中 Boss 风控时，搜索任务会进入 `blocked`
-- Boss 和猎聘的平台抽象已经建立
-- 风险门禁、紧急停止、状态流和缓存已经实现
-
-当前还没有完成的部分包括：
-
-- 真实 Playwright 引导填表流程
-- Boss 搜索的稳定性增强和验证页人工接管体验
-- 规则包远程热更新
-- 自动更新安装包分发
-- 多平台正式接入
-
-如果你现在启动这个仓库，看到的是一个围绕真实产品边界搭起来的原型系统，而不是一个已经可以安全批量投递的成品。
-
-## 技术架构
-
-### 桌面端
-
-- Electron
-- React
-- Vite
-- TypeScript
-- React Router
-- TanStack Query
-- Tailwind CSS
-
-### 本地接口服务
-
-- FastAPI
-- SQLModel
-- SQLite
-
-### 自动化与平台层
-
-- 平台适配器抽象
-- 本地浏览器会话管理
-- 规则包加载
-- 风险控制服务
-
-## 目录结构
-
-```text
-.
-├─ electron/                    # Electron 主进程与预加载脚本
-├─ src/                         # React 前端
-│  ├─ components/               # 卡片、时间线、侧边栏、免责声明等组件
-│  ├─ pages/                    # Setup / Search / Results / History 页面
-│  ├─ lib/                      # API 调用与展示工具函数
-│  └─ types.ts                  # 前端类型定义
-├─ backend/
-│  ├─ openresume_api/
-│  │  ├─ adapters/              # 平台适配器
-│  │  ├─ services/              # 搜索、匹配、风控、规则、会话等服务
-│  │  ├─ fixtures/              # 本地示例职位数据
-│  │  ├─ rules/                 # 平台规则包
-│  │  ├─ models.py              # 数据模型
-│  │  ├─ schemas.py             # 接口 schema
-│  │  └─ main.py                # FastAPI 入口
-│  └─ tests/                    # 后端测试
-└─ scripts/                     # 构建辅助脚本
+```bash
+npm install
 ```
 
-## 适合谁使用
-
-当前这个仓库更适合两类人：
-
-- 想做本地桌面求职 Agent 的开发者
-- 想在“安全收敛”前提下继续接真实平台能力的二次开发者
-
-如果你的目标是：
-
-- 研究桌面端架构
-- 研究本地 Agent 工作流
-- 继续接入真实平台
-- 做风控优先的求职辅助产品
-
-这个仓库是一个合适的起点。
-
-如果你的目标是“立即全自动海投”，这个仓库刻意不走那条路线。
-
-## 本地启动
-
-### 1. 安装后端依赖
+Install backend dependencies:
 
 ```bash
 cd backend
 python -m pip install -e .[dev]
 ```
 
-### 2. 安装前端依赖
-
-在 Windows PowerShell 下建议使用 `npm.cmd`：
+Run the frontend:
 
 ```bash
-cd ..
-npm.cmd install
+npm run dev:web
 ```
 
-### 3. 启动桌面开发环境
-
-```bash
-npm.cmd run dev
-```
-
-开发模式下，Electron 会自动尝试使用：
-
-```bash
-python -m openresume_api
-```
-
-来拉起本地 FastAPI。
-
-### 4. 只启动后端
-
-如果你只想单独调试接口：
+Run backend tests:
 
 ```bash
 cd backend
-python -m openresume_api
+pytest
 ```
 
-健康检查：
+## Notes
 
-```bash
-curl http://127.0.0.1:38417/health
-```
-
-如果你只想演示完整流程、不想触发真实 Boss 搜索，可以先设置：
-
-```bash
-set OPENRESUME_BOSS_SEARCH_MODE=fixture
-```
-
-然后再启动应用。
-
-## 常用检查命令
-
-### 前端类型检查
-
-```bash
-npm.cmd run typecheck
-```
-
-### 前端构建
-
-```bash
-npm.cmd run build
-```
-
-### 后端测试
-
-```bash
-cd backend
-python -m pytest
-```
-
-## Windows 打包
-
-当前仓库已经包含：
-
-- Electron 桌面壳
-- 前端构建脚本
-- PyInstaller 适配后的后端入口
-
-打包顺序如下。
-
-### 1. 先打包 Python 后端
-
-```bash
-cd backend
-python -m pip install -e .[packaging]
-pyinstaller --onefile --name openresume-api openresume_api/__main__.py
-```
-
-### 2. 再打包 Electron 桌面端
-
-```bash
-cd ..
-npm.cmd run package:windows
-```
-
-如果缺少 `backend/dist/openresume-api.exe`，打包脚本会直接报错并提示先完成后端打包。
-
-## 已实现页面
-
-当前前端已经包含以下页面：
-
-- `资料设置`
-  - 上传简历
-  - 编辑候选人画像
-  - 查看平台能力
-  - 启动独立平台会话
-- `搜索任务`
-  - 选择平台
-  - 选择模式
-  - 输入岗位、城市、薪资和关键词
-  - 查看风控限制
-- `结果面板`
-  - 查看搜索时间线
-  - 查看岗位卡片
-  - 打开职位页
-  - 进入引导投递
-- `历史记录`
-  - 查看搜索历史
-  - 查看引导动作记录
-  - 启用或解除紧急停止
-
-## 开发注意事项
-
-- 当前版本默认是中文界面
-- Windows PowerShell 下优先使用 `npm.cmd`
-- 不要把这个仓库当成“已接通真实平台的量产投递器”
-- 如果你要继续接 Boss 或其他平台，建议先补适配器契约测试和失败日志导出
-
-## Roadmap
-
-- 增强 Boss 搜索稳定性与详情页解析
-- 完成真实引导投递流程
-- 接入猎聘适配器
-- 增加规则包更新机制
-- 增加日志导出和故障回传
-- 完成 Windows 安装包发布流程
-
-## 许可证
-
-当前仓库未单独声明许可证时，请先按仓库实际 License 文件为准；如果尚未添加，请在公开分发前补充明确许可证。
+- `main` does not contain real Boss login automation anymore
+- demo data lives in [`backend/openresume_api/fixtures/demo_jobs.json`](backend/openresume_api/fixtures/demo_jobs.json)
+- platform registration lives in [`backend/openresume_api/adapters/registry.py`](backend/openresume_api/adapters/registry.py)

@@ -20,19 +20,8 @@ class Settings:
     llm_provider: str = os.getenv("OPENRESUME_LLM_PROVIDER", "heuristic")
     openai_base_url: str | None = os.getenv("OPENRESUME_OPENAI_BASE_URL", None)
     openai_api_key: str | None = os.getenv("OPENRESUME_OPENAI_API_KEY", None)
-    disable_browser_open: bool = os.getenv("OPENRESUME_DISABLE_BROWSER_OPEN", "0") == "1"
-    boss_search_mode: str = os.getenv("OPENRESUME_BOSS_SEARCH_MODE", "live")
-    boss_search_page_size: int = int(os.getenv("OPENRESUME_BOSS_SEARCH_PAGE_SIZE", "30"))
-    boss_search_max_queries: int = int(os.getenv("OPENRESUME_BOSS_SEARCH_MAX_QUERIES", "4"))
-    boss_search_cache_ttl_seconds: int = int(
-        os.getenv("OPENRESUME_BOSS_SEARCH_CACHE_TTL_SECONDS", "1800")
-    )
-    boss_search_min_interval_seconds: float = float(
-        os.getenv("OPENRESUME_BOSS_SEARCH_MIN_INTERVAL_SECONDS", "3")
-    )
-    boss_search_api_url: str = os.getenv(
-        "OPENRESUME_BOSS_SEARCH_API_URL",
-        "https://www.zhipin.com/wapi/zpgeek/search/joblist.json",
+    disable_browser_open: bool = (
+        os.getenv("OPENRESUME_DISABLE_BROWSER_OPEN", "0") == "1"
     )
 
     @property

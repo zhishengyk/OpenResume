@@ -1,5 +1,0 @@
-2026/03/08-11:21:26.786 25e8 Creating DB d:\my project\OpenResume\tmp-edge-cdp\Default\EdgeCoupons/coupons_data.db since it was missing.
-2026/03/08-11:21:26.804 25e8 Reusing MANIFEST d:\my project\OpenResume\tmp-edge-cdp\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
-2026/03/08-11:21:30.566 5f0 Level-0 table #5: started
-2026/03/08-11:21:30.572 5f0 Level-0 table #5: 681597 bytes OK
-2026/03/08-11:21:30.577 5f0 Delete type=0 #3

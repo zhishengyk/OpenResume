@@ -12,3 +12,4 @@ backend/storage/
 backend/.ruff_cache/
 backend/*.egg-info/
 backend/tests/.test-storage/
+tmp-edge-cdp/
