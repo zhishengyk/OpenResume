@@ -167,7 +167,21 @@ class OpenAICompatibleLLMProvider:
                 "company_name": job.company_name,
                 "city": job.city,
                 "salary_text": job.salary_text,
+                "salary_min": job.salary_min,
+                "salary_max": job.salary_max,
+                "experience_text": job.experience_text,
+                "degree_text": job.degree_text,
                 "work_mode": job.work_mode,
+                "department": (job.raw_payload or {}).get("department", ""),
+                "location_text": (job.raw_payload or {}).get("location_text", ""),
+                "responsibilities": ((job.raw_payload or {}).get("detail_sections") or {}).get(
+                    "responsibilities",
+                    "",
+                )[:1200],
+                "requirements": ((job.raw_payload or {}).get("detail_sections") or {}).get(
+                    "requirements",
+                    "",
+                )[:1200],
                 "jd_text": job.jd_text[:3000],
             }
             for job in jobs
@@ -178,7 +192,8 @@ class OpenAICompatibleLLMProvider:
             "{\"results\": [{\"external_job_id\": str, \"llm_score\": number, "
             "\"highlights\": [str], \"missing_keywords\": [str], "
             "\"risk_flags\": [str], \"llm_summary\": str}]}. "
-            "Scores must be 0-100. Only use information present in the candidate profile and JD."
+            "Scores must be 0-100. Only use information present in the candidate profile and cleaned job payload. "
+            "Do not speculate about missing page data or invent fields."
         )
         return [
             {"role": "system", "content": instruction},

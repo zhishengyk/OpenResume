@@ -19,6 +19,12 @@ class OfficialSource:
 
 def _classify_source(url: str) -> str:
     lowered = url.lower()
+    if "jobs.bytedance.com" in lowered:
+        return "bytedance"
+    if "taotian.com" in lowered or "taobao.com" in lowered:
+        return "taobao"
+    if "pddglobalhr.com" in lowered:
+        return "pdd"
     if "mokahr.com" in lowered:
         return "moka"
     if "feishu.cn" in lowered:

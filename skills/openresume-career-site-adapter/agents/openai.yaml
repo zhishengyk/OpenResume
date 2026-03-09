@@ -1,0 +1,4 @@
+interface:
+  display_name: "Career Site Adapter"
+  short_description: "Adapt official career homepages into real job extraction flows."
+  default_prompt: "Use $openresume-career-site-adapter to reverse-engineer an official recruitment site and patch the right extractor."

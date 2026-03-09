@@ -3,6 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..adapters.base import NormalizedJobDraft
+from ..adapters.official_extractors.common import (
+    candidate_quality_penalty,
+    matches_requested_targets,
+    normalize_city,
+    unrelated_role_reasons,
+)
 from ..models import CandidateProfile
 
 
@@ -16,20 +22,10 @@ class RuleMatch:
 
 
 class MatchingService:
-    @staticmethod
-    def _normalize_city(city: str) -> str:
-        candidate = city.strip()
-        for separator in ("\u00b7", "-", "_", "/", "\\", " "):
-            if separator in candidate:
-                candidate = candidate.split(separator, 1)[0].strip()
-        if candidate.endswith("\u5e02"):
-            candidate = candidate[:-1]
-        return candidate
-
     def _city_matches(self, draft_city: str, requested_cities: set[str]) -> bool:
         if not requested_cities:
             return True
-        normalized_draft = self._normalize_city(draft_city)
+        normalized_draft = normalize_city(draft_city)
         return normalized_draft in requested_cities
 
     def filter_and_score(
@@ -44,7 +40,7 @@ class MatchingService:
         matches: list[RuleMatch] = []
         targets = [target.lower() for target in requested_targets or profile.target_roles]
         cities = {
-            self._normalize_city(city)
+            normalize_city(city)
             for city in (requested_cities or profile.preferred_cities)
             if city.strip()
         }
@@ -55,14 +51,23 @@ class MatchingService:
         profile_skills = {skill.lower(): skill for skill in profile.skills}
 
         for draft in drafts:
+            quality = draft.raw_payload.get("quality") or {}
+            quality_score = int(quality.get("score") or 100)
+            if quality_score < 60:
+                continue
             if not self._city_matches(draft.city, cities):
                 continue
             if salary_floor and draft.salary_min and draft.salary_min < salary_floor:
                 continue
-            if targets and not any(
-                target in draft.title.lower() or target in draft.jd_text.lower()
-                for target in targets
-            ):
+            combined_text = f"{draft.title} {draft.jd_text}"
+            if targets and not matches_requested_targets(combined_text, requested_targets or profile.target_roles):
+                continue
+            role_reasons = unrelated_role_reasons(
+                draft.title,
+                draft.jd_text[:400],
+                requested_targets or profile.target_roles,
+            )
+            if role_reasons:
                 continue
 
             matched_keywords = [
@@ -103,6 +108,8 @@ class MatchingService:
                 + salary_component
                 + location_component
             )
+            score -= candidate_quality_penalty(draft.raw_payload)
+            score = max(score, 0.0)
 
             risk_flags: list[str] = []
             if draft.work_mode.lower() == "onsite":
@@ -111,6 +118,9 @@ class MatchingService:
                 risk_flags.append("\u8981\u6c42\u5e26\u56e2\u961f")
             if "\u0033-\u0035\u5e74" in draft.experience_text and profile.years_experience < 3:
                 risk_flags.append("\u5e74\u9650\u53ef\u80fd\u4e0d\u8db3")
+            quality_penalty = candidate_quality_penalty(draft.raw_payload)
+            if quality_penalty:
+                risk_flags.append("官网信息质量一般")
 
             matches.append(
                 RuleMatch(

@@ -181,6 +181,28 @@ class SearchService:
                     "Fetching official sites and applying code-based cleaning.",
                 )
                 raw_jobs = await self._fetch_platform_jobs(payload, profile)
+                official_stats = {}
+                for platform in payload.platforms:
+                    adapter = platform_gateway.get(platform)
+                    stats = getattr(adapter, "last_run_stats", None)
+                    if isinstance(stats, dict) and stats:
+                        for key, value in stats.items():
+                            official_stats[key] = int(official_stats.get(key, 0)) + int(value)
+                if official_stats:
+                    event_bus.publish(
+                        session_id,
+                        "code_cleaned",
+                        (
+                            "Official cleanup stats: "
+                            f"{official_stats.get('sources_selected', 0)} sites, "
+                            f"{official_stats.get('entry_candidates', 0)} candidates, "
+                            f"{official_stats.get('hard_filtered', 0)} hard-filtered, "
+                            f"{official_stats.get('detail_dropped', 0)} detail-dropped, "
+                            f"{official_stats.get('quality_penalized', 0)} penalized, "
+                            f"{official_stats.get('final_model_candidates', 0)} ready for ranking."
+                        ),
+                        official_stats,
+                    )
                 rule_matches = matching_service.filter_and_score(
                     profile=profile,
                     drafts=raw_jobs,

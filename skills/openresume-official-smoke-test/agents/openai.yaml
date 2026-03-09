@@ -1,0 +1,4 @@
+interface:
+  display_name: "Official Smoke Test"
+  short_description: "Run live smoke tests for OpenResume official source extractors."
+  default_prompt: "Use $openresume-official-smoke-test to validate official career-site extraction against live sources and explain zero-result failures."
