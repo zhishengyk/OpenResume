@@ -43,7 +43,9 @@ export function ConfigurationGuide({
   const runningInDesktopShell = Boolean(window.openResumeDesktop);
   const healthUrl = `${apiBaseUrl}/health`;
   const shouldShowModelGuide =
-    runtimeConfig && runtimeConfig.llm_effective_provider === "heuristic";
+    runtimeConfig &&
+    (!runtimeConfig.llm_configured ||
+      runtimeConfig.llm_effective_provider === "heuristic");
 
   if (!apiUnavailableMessage && !runtimeConfig) {
     return null;
@@ -202,7 +204,9 @@ export function ConfigurationGuide({
         </section>
       ) : null}
 
-      {runtimeConfig && runtimeConfig.llm_effective_provider !== "heuristic" ? (
+      {runtimeConfig &&
+      runtimeConfig.llm_configured &&
+      runtimeConfig.llm_effective_provider !== "heuristic" ? (
         <section className="rounded-[32px] border border-mint/30 bg-mint/10 p-6 shadow-console">
           <div className="flex items-start gap-4">
             <div className="rounded-2xl bg-shell p-3 text-ink">

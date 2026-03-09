@@ -40,6 +40,10 @@ class AnalysisBatch:
     results: list[LLMResult]
 
 
+class LLMConfigurationError(RuntimeError):
+    pass
+
+
 class LLMProvider(Protocol):
     name: str
     metadata: AnalysisMetadata
@@ -260,12 +264,8 @@ class LLMService:
         if llm_config.llm_provider == "openai_compatible":
             if llm_state.configured:
                 return OpenAICompatibleLLMProvider(llm_config)
-            return HeuristicLLMProvider(
-                notice=llm_state.notice
-            )
-        return HeuristicLLMProvider(
-            notice=llm_state.notice
-        )
+            raise LLMConfigurationError(llm_state.notice)
+        return HeuristicLLMProvider(notice=llm_state.notice)
 
     def _cached_results(
         self,
@@ -333,27 +333,13 @@ class LLMService:
 
         provider = self._primary_provider()
         cached_results, fresh_jobs = self._cached_results(db, provider, jobs)
-        try:
-            fresh_results = await provider.analyze(profile, fresh_jobs) if fresh_jobs else []
-            if fresh_results:
-                self._persist_results(db, provider, fresh_jobs, fresh_results)
-            return AnalysisBatch(
-                metadata=provider.metadata,
-                results=cached_results + fresh_results,
-            )
-        except Exception as error:
-            fallback = HeuristicLLMProvider(
-                notice=(
-                    f"OpenAI-compatible analysis failed ({error}). "
-                    "Results are using heuristic fallback only."
-                )
-            )
-            fresh_results = await fallback.analyze(profile, jobs)
-            self._persist_results(db, fallback, jobs, fresh_results)
-            return AnalysisBatch(
-                metadata=fallback.metadata,
-                results=fresh_results,
-            )
+        fresh_results = await provider.analyze(profile, fresh_jobs) if fresh_jobs else []
+        if fresh_results:
+            self._persist_results(db, provider, fresh_jobs, fresh_results)
+        return AnalysisBatch(
+            metadata=provider.metadata,
+            results=cached_results + fresh_results,
+        )
 
 
 llm_service = LLMService()

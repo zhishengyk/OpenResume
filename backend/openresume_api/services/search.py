@@ -350,6 +350,9 @@ class SearchService:
                 )
             except Exception as error:
                 detail = str(error) or "Search session failed."
+                db.exec(delete(JobMatch).where(JobMatch.session_id == session_id))
+                db.exec(delete(JobListing).where(JobListing.session_id == session_id))
+                db.commit()
                 session.status = "failed"
                 session.blocked_reason = None
                 session.summary = detail

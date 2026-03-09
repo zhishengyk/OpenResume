@@ -137,10 +137,10 @@ class RuntimeConfigService:
             )
         if llm_config.llm_provider == "openai_compatible":
             return LLMRuntimeState(
-                effective_provider="heuristic",
+                effective_provider="openai_compatible",
                 configured=False,
                 missing_fields=missing_fields,
-                notice="已选择 OpenAI-compatible 排序，但缺少必要配置，当前会回退到规则/heuristic 排序。",
+                notice="已选择 OpenAI-compatible 排序，但缺少必要配置。搜索不会再自动降级到 heuristic，请先补齐配置。",
             )
         return LLMRuntimeState(
             effective_provider="heuristic",

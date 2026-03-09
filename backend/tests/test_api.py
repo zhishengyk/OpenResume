@@ -2,6 +2,7 @@ import time
 
 from openresume_api.adapters.base import NormalizedJobDraft, PlatformBlockedError
 from openresume_api.adapters.official import official_adapter
+from openresume_api.services.llm import OpenAICompatibleLLMProvider
 from openresume_api.services.runtime_config import runtime_config_service
 
 
@@ -292,3 +293,38 @@ def test_disabled_platform_is_rejected(client):
     response = create_search_session(client, platforms=["boss"])
     assert response.status_code == 409
     assert "archive/boss-login" in response.json()["detail"]
+
+
+def test_openai_failure_does_not_fallback_to_heuristic(client, monkeypatch):
+    upsert_profile(client)
+
+    async def fake_search_jobs(search, profile):
+        return [sample_draft()]
+
+    async def fake_analyze(self, profile, jobs):
+        raise RuntimeError("model backend unavailable")
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+    monkeypatch.setattr(OpenAICompatibleLLMProvider, "analyze", fake_analyze)
+
+    update = client.put(
+        "/api/runtime-config",
+        json={
+            "llm_provider": "openai_compatible",
+            "openai_base_url": "https://example.com/v1",
+            "openai_model": "gpt-4o-mini",
+            "openai_api_key": "secret-key-123456",
+            "replace_api_key": True,
+        },
+    )
+    assert update.status_code == 200
+
+    session = create_search_session(client)
+    assert session.status_code == 200
+
+    failed = wait_for_session_status(client, session.json()["id"], "failed")
+    assert "model backend unavailable" in failed["summary"]
+
+    matches = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    assert matches.status_code == 200
+    assert matches.json() == []
