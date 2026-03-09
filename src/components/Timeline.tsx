@@ -2,15 +2,15 @@ import type { SearchEvent } from "../types";
 
 function eventTypeLabel(type: string) {
   const mapping: Record<string, string> = {
-    search_started: "\u4efb\u52a1\u521b\u5efa",
-    search_restarted: "\u91cd\u8bd5\u641c\u7d22",
-    fetching_jobs: "\u6293\u53d6\u804c\u4f4d",
-    rule_ranked: "\u89c4\u5219\u7b5b\u9009",
-    llm_enriched: "\u6a21\u578b\u8865\u5145",
-    verification_opened: "\u6253\u5f00\u9a8c\u8bc1\u9875",
-    blocked: "\u5e73\u53f0\u963b\u585e",
-    failed: "\u4efb\u52a1\u5931\u8d25",
-    ready: "\u4efb\u52a1\u5b8c\u6210",
+    search_started: "任务创建",
+    search_restarted: "重试搜索",
+    fetching_jobs: "抓取岗位",
+    rule_ranked: "规则筛选",
+    llm_enriched: "模型补充",
+    verification_opened: "打开验证页",
+    blocked: "平台阻塞",
+    failed: "任务失败",
+    ready: "任务完成",
   };
 
   return mapping[type] || type;
@@ -25,18 +25,14 @@ export function Timeline({ events }: TimelineProps) {
     <div className="rounded-[28px] border border-ink/10 bg-shell/90 p-5 shadow-console">
       <div className="flex items-center justify-between">
         <p className="text-xs uppercase tracking-[0.22em] text-slate">
-          {"\u641c\u7d22\u65f6\u95f4\u7ebf"}
+          搜索时间线
         </p>
-        <p className="text-xs text-slate">
-          {events.length} {"\u6761\u4e8b\u4ef6"}
-        </p>
+        <p className="text-xs text-slate">{events.length} 条事件</p>
       </div>
       <div className="mt-5 space-y-4">
         {events.length === 0 ? (
           <p className="text-sm text-slate">
-            {
-              "\u6682\u65e0\u4e8b\u4ef6\u6d41\u3002\u4efb\u52a1\u542f\u52a8\u540e\uff0c\u641c\u7d22\u6d41\u6c34\u7ebf\u7684\u8fdb\u5ea6\u4f1a\u5b9e\u65f6\u663e\u793a\u5728\u8fd9\u91cc\u3002"
-            }
+            暂无事件流。任务启动后，搜索流水线的进度会实时显示在这里。
           </p>
         ) : null}
         {events.map((event) => (

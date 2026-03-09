@@ -13,6 +13,7 @@ os.environ.setdefault("OPENRESUME_STORAGE_DIR", str(TEST_STORAGE))
 import openresume_api.db as db_module
 from openresume_api.db import get_session
 from openresume_api.main import app
+from openresume_api.services.runtime_config import runtime_config_service
 
 
 TEST_ENGINE = create_engine(
@@ -35,6 +36,8 @@ app.dependency_overrides[get_session] = override_get_session
 def reset_database():
     SQLModel.metadata.drop_all(TEST_ENGINE)
     SQLModel.metadata.create_all(TEST_ENGINE)
+    if runtime_config_service.config_path.exists():
+        runtime_config_service.config_path.unlink()
     yield
 
 

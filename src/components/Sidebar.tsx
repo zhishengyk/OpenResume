@@ -1,9 +1,10 @@
-import { AlertTriangle, FolderSearch2, History, Settings2 } from "lucide-react";
+import { AlertTriangle, Bot, FolderSearch2, History, Settings2 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { cn } from "../lib/utils";
 
 const items = [
   { to: "/", label: "\u8d44\u6599\u8bbe\u7f6e", icon: Settings2 },
+  { to: "/models", label: "\u6a21\u578b\u914d\u7f6e", icon: Bot },
   { to: "/search", label: "\u641c\u7d22\u4efb\u52a1", icon: FolderSearch2 },
   { to: "/results", label: "\u7ed3\u679c\u9762\u677f", icon: AlertTriangle },
   { to: "/history", label: "\u5386\u53f2\u8bb0\u5f55", icon: History },
@@ -15,7 +16,7 @@ export function Sidebar() {
       <div className="absolute inset-0 bg-grid-fade bg-[size:22px_22px] opacity-40" />
       <div className="relative flex h-full flex-col gap-8">
         <div>
-          <p className="font-display text-4xl italic text-ink">OpenResume</p>
+          <p className="font-display text-4xl text-ink">OpenResume</p>
           <p className="mt-2 max-w-[16rem] text-sm leading-6 text-slate">
             {"\u7b80\u5386\u9a71\u52a8\u641c\u5c97\u4e0e\u5f15\u5bfc\u6295\u9012"}
           </p>

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Layers3, UploadCloud } from "lucide-react";
-import { ChangeEvent, useEffect, useState } from "react";
+import { type ChangeEvent, useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { splitCommaValues } from "../lib/utils";
 
@@ -103,7 +103,6 @@ export function SetupPage() {
     if (!file) {
       return;
     }
-
     uploadMutation.mutate(file);
   };
 
@@ -114,12 +113,11 @@ export function SetupPage() {
           <p className="text-xs uppercase tracking-[0.24em] text-slate">
             候选人画像
           </p>
-          <h1 className="mt-3 font-display text-5xl italic text-ink">
-            先把简历抽成稳定数据，再让平台模块各自消费。
+          <h1 className="mt-3 font-display text-5xl text-ink">
+            简历数据只保存在本地，并提供给各个平台模块复用。
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-slate">
-            主分支不再内置单个平台的真实登录逻辑，只保留模块化框架和一个本地
-            Demo 模块，用来验证搜索、匹配和风控链路。
+            上传一次简历后，把结构化画像维护干净。官网搜索和引导投递都会复用这份本地候选人数据。
           </p>
         </section>
 
@@ -132,12 +130,11 @@ export function SetupPage() {
               <p className="text-xs uppercase tracking-[0.24em] text-ember">
                 模块边界
               </p>
-              <p className="mt-3 font-display text-4xl italic text-ink">
-                每个平台都是独立模块
+              <p className="mt-3 font-display text-4xl text-ink">
+                每个平台都保持独立模块
               </p>
               <p className="mt-4 text-sm leading-7 text-slate">
-                公共层只保留平台注册、能力声明和统一入口，不再把某个平台的登录、
-                反检测和会话策略写死在主分支里。
+                主分支只暴露平台注册信息和共享契约。Boss 目前保留为灰色占位，官网模块为当前可用实现。
               </p>
             </div>
           </div>
@@ -153,7 +150,7 @@ export function SetupPage() {
             <UploadCloud size={34} className="text-ink" />
             <p className="mt-4 font-medium text-ink">上传 PDF 或 DOCX 简历</p>
             <p className="mt-2 text-sm text-slate">
-              解析在本地完成。导入后你仍然可以逐项修正结构化字段。
+              解析过程只在本地执行，导入后你仍然可以手动修正每一个字段。
             </p>
             <input
               type="file"
@@ -168,7 +165,7 @@ export function SetupPage() {
           ) : null}
           {profileQuery.data?.source_filename ? (
             <p className="mt-4 text-sm text-slate">
-              当前来源文件：{profileQuery.data.source_filename}
+              当前简历：{profileQuery.data.source_filename}
             </p>
           ) : null}
 
@@ -180,7 +177,11 @@ export function SetupPage() {
               {platformsQuery.data?.map((platform) => (
                 <div
                   key={platform.platform}
-                  className="rounded-2xl border border-ink/10 bg-shell px-4 py-3"
+                  className={`rounded-2xl border px-4 py-3 ${
+                    platform.selectable
+                      ? "border-ink/10 bg-shell"
+                      : "border-ink/10 bg-shell/60"
+                  }`}
                 >
                   <div className="flex items-center justify-between gap-3">
                     <p className="font-semibold text-ink">{platform.label}</p>
@@ -189,17 +190,12 @@ export function SetupPage() {
                     </p>
                   </div>
                   <p className="mt-2 text-sm text-slate">
-                    搜索：{platform.search_supported ? "支持" : "未启用"} · 浏览：
-                    {platform.review_open_supported ? "支持" : "未启用"} · 引导投递：
-                    {platform.guided_apply_supported ? "支持" : "未启用"}
+                    搜索：{platform.search_supported ? "已启用" : "未启用"} · 查看：
+                    {platform.review_open_supported ? "已启用" : "未启用"} · 引导投递：
+                    {platform.guided_apply_supported ? "已启用" : "未启用"}
                   </p>
                   <p className="mt-1 text-sm text-slate">
-                    会话模块：
-                    {platform.session_supported
-                      ? platform.session_required
-                        ? "需要独立会话"
-                        : "可选"
-                      : "无"}
+                    {platform.selectable ? "可选" : platform.disabled_reason || "未启用"}
                   </p>
                 </div>
               ))}
@@ -211,14 +207,14 @@ export function SetupPage() {
           <div className="grid gap-5 md:grid-cols-2">
             {[
               ["姓名", "full_name"],
-              ["岗位标题", "headline"],
+              ["职位标题", "headline"],
               ["目标岗位", "target_roles"],
-              ["目标城市", "preferred_cities"],
+              ["期望城市", "preferred_cities"],
               ["薪资下限", "salary_floor"],
               ["工作年限", "years_experience"],
               ["学历", "degree"],
               ["技能关键词", "skills"],
-              ["必须命中关键词", "must_have_keywords"],
+              ["必备关键词", "must_have_keywords"],
               ["简历语言", "source_language"],
             ].map(([label, key]) => (
               <label key={key} className="space-y-2">
@@ -260,7 +256,7 @@ export function SetupPage() {
             onClick={() => saveMutation.mutate()}
             disabled={saveMutation.isPending}
           >
-            {saveMutation.isPending ? "正在保存画像..." : "保存画像"}
+            {saveMutation.isPending ? "正在保存..." : "保存画像"}
           </button>
         </div>
       </section>

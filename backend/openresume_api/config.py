@@ -4,6 +4,7 @@ import os
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = ROOT_DIR.parent
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,19 @@ class Settings:
     llm_provider: str = os.getenv("OPENRESUME_LLM_PROVIDER", "heuristic")
     openai_base_url: str | None = os.getenv("OPENRESUME_OPENAI_BASE_URL", None)
     openai_api_key: str | None = os.getenv("OPENRESUME_OPENAI_API_KEY", None)
+    openai_model: str | None = os.getenv("OPENRESUME_OPENAI_MODEL", None)
+    official_source_file: Path = Path(
+        os.getenv("OPENRESUME_OFFICIAL_SOURCE_FILE", str(PROJECT_ROOT / "url.md"))
+    )
+    official_request_timeout_seconds: float = float(
+        os.getenv("OPENRESUME_OFFICIAL_REQUEST_TIMEOUT_SECONDS", "12")
+    )
+    official_source_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_SOURCE_LIMIT", "10")
+    )
+    official_job_limit_per_source: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_JOB_LIMIT_PER_SOURCE", "4")
+    )
     disable_browser_open: bool = (
         os.getenv("OPENRESUME_DISABLE_BROWSER_OPEN", "0") == "1"
     )
@@ -27,6 +41,10 @@ class Settings:
     @property
     def database_url(self) -> str:
         return f"sqlite:///{self.storage_dir / self.database_filename}"
+
+    @property
+    def database_path(self) -> Path:
+        return self.storage_dir / self.database_filename
 
     @property
     def resume_dir(self) -> Path:

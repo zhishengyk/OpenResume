@@ -4,24 +4,39 @@ OpenResume is a local desktop job-search workbench built with `Electron + React 
 
 ## Current Branch State
 
-`main` now keeps only the modular platform skeleton:
+`main` now exposes only two platform entries:
 
-- `demo`: a local fixture-backed module used for search, matching, review, and safe guided-flow testing
-- `liepin`: a placeholder module with capability metadata only
+- `official`: connected and selectable; searches official career sites from `url.md`
+- `boss`: visible but disabled; Boss work stays parked on `archive/boss-login`
 
-The previous Boss login/search work has been preserved on the local branch:
+The search pipeline is now:
 
-- `archive/boss-login`
+1. Parse official site sources from `url.md`
+2. Fetch official pages
+3. Clean and normalize job candidates in code
+4. Rank cleaned jobs with an OpenAI-compatible model, or explicit heuristic fallback
+5. Launch in-app verification popups for guided apply when login/captcha is required
 
-## Design Goal
+## Key Behaviors
 
-Each platform belongs to its own module.
+- Platform selection is multi-select on the frontend
+- Disabled platforms remain visible but cannot be checked
+- Search sessions store `requested_platforms`
+- Guided apply uses the uploaded local resume and opens verification inside the app popup
+- If model configuration is missing or model calls fail, the UI shows that results are using heuristic fallback
 
-- Platform-specific logic stays inside `backend/openresume_api/adapters/<platform>.py`
-- Public APIs only depend on capability metadata and a shared adapter contract
-- No platform-specific browser/session strategy is hard-coded in the main branch
+## Model Configuration
 
-This keeps the codebase ready for future integrations while keeping the default branch small and low-coupling.
+Set these environment variables to enable OpenAI-compatible ranking:
+
+```bash
+OPENRESUME_LLM_PROVIDER=openai_compatible
+OPENRESUME_OPENAI_BASE_URL=https://your-model-endpoint/v1
+OPENRESUME_OPENAI_API_KEY=your-key
+OPENRESUME_OPENAI_MODEL=your-model-name
+```
+
+Without these values, the backend falls back to heuristic ranking and returns an explicit degraded-analysis notice to the UI.
 
 ## Development
 
@@ -38,10 +53,10 @@ cd backend
 python -m pip install -e .[dev]
 ```
 
-Run the frontend:
+Run the desktop app in development:
 
 ```bash
-npm run dev:web
+npm run dev
 ```
 
 Run backend tests:
@@ -51,8 +66,8 @@ cd backend
 pytest
 ```
 
-## Notes
+Run frontend type checking:
 
-- `main` does not contain real Boss login automation anymore
-- demo data lives in [`backend/openresume_api/fixtures/demo_jobs.json`](backend/openresume_api/fixtures/demo_jobs.json)
-- platform registration lives in [`backend/openresume_api/adapters/registry.py`](backend/openresume_api/adapters/registry.py)
+```bash
+npm run typecheck
+```

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, shell } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
@@ -6,6 +6,7 @@ const fs = require("fs");
 const API_PORT = process.env.OPENRESUME_API_PORT || "38417";
 const RENDERER_URL = process.env.OPENRESUME_RENDERER_URL || "http://127.0.0.1:4173";
 let backendProcess = null;
+let mainWindow = null;
 
 function logBackend(stream, label) {
   stream?.on("data", (chunk) => {
@@ -23,7 +24,7 @@ function backendCommand() {
 
   return {
     command: process.env.OPENRESUME_PYTHON || "python",
-    args: ["-m", "openresume_api"]
+    args: ["-m", "openresume_api"],
   };
 }
 
@@ -31,7 +32,6 @@ function backendCwd() {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, "backend");
   }
-
   return path.join(__dirname, "..", "backend");
 }
 
@@ -46,9 +46,9 @@ function startBackend() {
     env: {
       ...process.env,
       OPENRESUME_API_PORT: API_PORT,
-      OPENRESUME_STORAGE_DIR: path.join(app.getPath("userData"), "storage")
+      OPENRESUME_STORAGE_DIR: path.join(app.getPath("userData"), "storage"),
     },
-    stdio: ["ignore", "pipe", "pipe"]
+    stdio: ["ignore", "pipe", "pipe"],
   });
 
   logBackend(backendProcess.stdout, "stdout");
@@ -70,18 +70,24 @@ async function waitForBackend() {
       if (response.ok) {
         return;
       }
-    } catch (error) {
+    } catch {
       // Backend is still starting.
     }
-
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
   throw new Error("Backend did not become healthy in time.");
 }
 
-function createWindow() {
-  const mainWindow = new BrowserWindow({
+function attachExternalHandler(targetWindow) {
+  targetWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: "deny" };
+  });
+}
+
+function createMainWindow() {
+  mainWindow = new BrowserWindow({
     width: 1480,
     height: 980,
     minWidth: 1180,
@@ -91,31 +97,66 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
-      nodeIntegration: false
-    }
+      nodeIntegration: false,
+    },
   });
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
-    return { action: "deny" };
-  });
+  attachExternalHandler(mainWindow);
 
   if (app.isPackaged) {
     mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
-    return;
+    return mainWindow;
   }
 
   mainWindow.loadURL(RENDERER_URL);
+  return mainWindow;
 }
+
+function createVerificationWindow(targetUrl, title = "Verification") {
+  return new Promise((resolve) => {
+    const verificationWindow = new BrowserWindow({
+      width: 980,
+      height: 760,
+      minWidth: 860,
+      minHeight: 640,
+      title,
+      autoHideMenuBar: true,
+      parent: mainWindow || undefined,
+      modal: false,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+
+    attachExternalHandler(verificationWindow);
+    verificationWindow.loadURL(targetUrl);
+    verificationWindow.on("closed", () => {
+      resolve({ closed: true });
+    });
+  });
+}
+
+ipcMain.handle("desktop:open-external", async (_, url) => {
+  await shell.openExternal(url);
+  return { ok: true };
+});
+
+ipcMain.handle("desktop:open-verification-window", async (_, payload) => {
+  if (!payload?.url) {
+    throw new Error("Verification URL is required.");
+  }
+  return createVerificationWindow(payload.url, payload.title);
+});
 
 app.whenReady().then(async () => {
   startBackend();
   await waitForBackend();
-  createWindow();
+  createMainWindow();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      createMainWindow();
     }
   });
 });

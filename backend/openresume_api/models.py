@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -9,7 +9,7 @@ from sqlmodel import Field, SQLModel
 
 
 def now_utc() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class CandidateProfile(SQLModel, table=True):
@@ -38,7 +38,10 @@ class AppSetting(SQLModel, table=True):
 
 class SearchSession(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
-    platform: str
+    requested_platforms: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSON),
+    )
     mode: str
     status: str = "draft"
     job_targets: list[str] = Field(default_factory=list, sa_column=Column(JSON))
@@ -47,6 +50,9 @@ class SearchSession(SQLModel, table=True):
     must_have_keywords: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     blocked_reason: str | None = None
     summary: str | None = None
+    analysis_provider: str = "heuristic"
+    analysis_degraded: bool = False
+    analysis_notice: str | None = None
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)
 
@@ -66,6 +72,10 @@ class JobListing(SQLModel, table=True):
     degree_text: str = ""
     work_mode: str = ""
     url: str
+    detail_url: str | None = None
+    apply_url: str | None = None
+    source_company_url: str | None = None
+    apply_requires_login: bool = False
     jd_text: str
     jd_hash: str
     raw_payload: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
@@ -84,6 +94,9 @@ class JobMatch(SQLModel, table=True):
     risk_flags: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     llm_summary: str | None = None
     cached_llm: bool = False
+    analysis_provider: str = "heuristic"
+    analysis_degraded: bool = False
+    analysis_notice: str | None = None
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)
 
@@ -95,6 +108,9 @@ class ApplicationAttempt(SQLModel, table=True):
     mode: str
     status: str = "queued"
     message: str = ""
+    verification_url: str | None = None
+    launch_url: str | None = None
+    context: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)
 
@@ -117,6 +133,7 @@ class RiskEvent(SQLModel, table=True):
 
 class LLMAnalysisCache(SQLModel, table=True):
     cache_key: str = Field(primary_key=True)
+    provider: str = "heuristic"
     platform: str
     external_job_id: str
     jd_hash: str
@@ -126,4 +143,3 @@ class LLMAnalysisCache(SQLModel, table=True):
     risk_flags: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     llm_summary: str = ""
     updated_at: datetime = Field(default_factory=now_utc)
-

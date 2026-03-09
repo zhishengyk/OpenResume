@@ -32,6 +32,8 @@ class PlatformCapabilityResponse(BaseModel):
     guided_apply_supported: bool
     session_supported: bool = False
     session_required: bool = False
+    selectable: bool = True
+    disabled_reason: str | None = None
     rule_pack_version: str
 
 
@@ -51,7 +53,7 @@ class RiskConsentCreate(BaseModel):
 
 
 class SearchSessionCreate(BaseModel):
-    platform: str
+    platforms: list[str] = Field(default_factory=list)
     mode: str
     job_targets: list[str]
     cities: list[str]
@@ -80,6 +82,12 @@ class JobMatchResponse(BaseModel):
     degree_text: str
     work_mode: str
     url: str
+    detail_url: str | None
+    apply_url: str | None
+    source_company_url: str | None
+    apply_requires_login: bool
+    apply_supported: bool
+    jd_text: str
     jd_excerpt: str
     rule_score: float
     llm_score: float | None
@@ -89,12 +97,80 @@ class JobMatchResponse(BaseModel):
     risk_flags: list[str]
     llm_summary: str | None
     cached_llm: bool
+    analysis_provider: str
+    analysis_degraded: bool
+    analysis_notice: str | None
+
+
+class VerificationWindowResponse(BaseModel):
+    url: str
+    title: str
+    message: str
+
+
+class ApplicationAttemptResponse(BaseModel):
+    id: str
+    job_id: str
+    platform: str
+    mode: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    message: str
+    verification_url: str | None = None
+    launch_url: str | None = None
+    context: dict[str, Any] = Field(default_factory=dict)
 
 
 class AppStateResponse(BaseModel):
     launch_disclaimer_required: bool
     guided_apply_consents: list[str]
     emergency_stop_active: bool
+
+
+class RuntimeConfigResponse(BaseModel):
+    api_port: int
+    llm_provider: str
+    llm_effective_provider: str
+    llm_configured: bool
+    llm_missing_envs: list[str]
+    llm_notice: str
+    openai_api_key_configured: bool
+    openai_api_key_preview: str | None
+    openai_base_url: str | None
+    openai_model: str | None
+    official_source_file: str
+
+
+class RuntimeConfigUpdateRequest(BaseModel):
+    llm_provider: str = "heuristic"
+    openai_base_url: str | None = None
+    openai_model: str | None = None
+    openai_api_key: str | None = None
+    replace_api_key: bool = False
+
+
+class LLMRuntimeProbeRequest(BaseModel):
+    llm_provider: str = "openai_compatible"
+    openai_base_url: str | None = None
+    openai_model: str | None = None
+    openai_api_key: str | None = None
+    use_saved_api_key: bool = True
+
+
+class LLMConnectionTestResponse(BaseModel):
+    ok: bool
+    provider: str
+    model: str | None
+    latency_ms: int | None = None
+    reply_preview: str | None = None
+    message: str
+
+
+class LLMModelListResponse(BaseModel):
+    provider: str
+    models: list[str]
+    message: str
 
 
 class RiskStatusResponse(BaseModel):

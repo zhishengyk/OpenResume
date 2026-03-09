@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
-from .adapters.base import PlatformBlockedError
+from .config import settings
 from .db import get_session, init_db
 from .models import (
     ApplicationAttempt,
@@ -21,24 +21,34 @@ from .models import (
 )
 from .schemas import (
     AppStateResponse,
+    ApplicationAttemptResponse,
     CandidateProfileUpdate,
     EmergencyStopRequest,
     JobMatchResponse,
+    LLMConnectionTestResponse,
+    LLMModelListResponse,
+    LLMRuntimeProbeRequest,
     PlatformSessionResponse,
     RiskConsentCreate,
     RiskStatusResponse,
+    RuntimeConfigResponse,
+    RuntimeConfigUpdateRequest,
     SearchSessionCreate,
+    VerificationWindowResponse,
 )
 from .services.compliance import compliance_service
 from .services.events import event_bus
 from .services.platform_gateway import platform_gateway
 from .services.profile import profile_service
 from .services.risk import risk_control_service
+from .services.runtime_config import runtime_config_service
 from .services.search import search_service
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
-RECOMMENDED_ACCOUNT_NOTICE = "建议使用独立的浏览器资料目录，不复用日常登录环境。"
+RECOMMENDED_ACCOUNT_NOTICE = (
+    "Use the in-app verification window for login and captcha challenges on official sites."
+)
 
 
 @asynccontextmanager
@@ -47,7 +57,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="OpenResume Local API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="OpenResume Local API", version="0.2.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -116,7 +126,13 @@ def match_response(match: JobMatch, job: JobListing) -> JobMatchResponse:
         degree_text=job.degree_text,
         work_mode=job.work_mode,
         url=job.url,
-        jd_excerpt=job.jd_text[:160],
+        detail_url=job.detail_url,
+        apply_url=job.apply_url,
+        source_company_url=job.source_company_url,
+        apply_requires_login=job.apply_requires_login,
+        apply_supported=bool(job.apply_url),
+        jd_text=job.jd_text,
+        jd_excerpt=job.jd_text[:240],
         rule_score=match.rule_score,
         llm_score=match.llm_score,
         final_score=match.final_score,
@@ -125,36 +141,159 @@ def match_response(match: JobMatch, job: JobListing) -> JobMatchResponse:
         risk_flags=match.risk_flags,
         llm_summary=match.llm_summary,
         cached_llm=match.cached_llm,
+        analysis_provider=match.analysis_provider,
+        analysis_degraded=match.analysis_degraded,
+        analysis_notice=match.analysis_notice,
     )
 
 
-async def ensure_platform_search_ready(
-    *,
-    platform: str,
-    adapter,
-    blocked_hint: str,
-) -> None:
-    ensure_search_ready = getattr(adapter, "ensure_search_ready", None)
-    if not callable(ensure_search_ready):
-        return
+def attempt_response(attempt: ApplicationAttempt) -> ApplicationAttemptResponse:
+    return ApplicationAttemptResponse(
+        id=attempt.id,
+        job_id=attempt.job_id,
+        platform=attempt.platform,
+        mode=attempt.mode,
+        status=attempt.status,
+        created_at=attempt.created_at,
+        updated_at=attempt.updated_at,
+        message=attempt.message,
+        verification_url=attempt.verification_url,
+        launch_url=attempt.launch_url,
+        context=attempt.context or {},
+    )
 
-    try:
-        await ensure_search_ready()
-    except PlatformBlockedError as error:
+
+async def ensure_platform_search_ready(platform: str, db: SessionDep) -> None:
+    adapter = platform_gateway.get(platform)
+    capability = adapter.capability()
+    if not capability.session_required:
+        return
+    state = await adapter.session_state(db)
+    if not state.get("active"):
         raise HTTPException(
             status_code=409,
-            detail=f"{str(error)} {blocked_hint}",
-        ) from error
-    except Exception as error:
+            detail=f"{platform} requires an active session before searching.",
+        )
+    if not state.get("search_ready"):
         raise HTTPException(
-            status_code=503,
-            detail=f"{platform} 会话检查失败：{error}",
-        ) from error
+            status_code=409,
+            detail=f"{platform} session is not ready yet.",
+        )
 
 
 @app.get("/api/app-state", response_model=AppStateResponse)
 def get_app_state(db: SessionDep) -> AppStateResponse:
     return AppStateResponse(**compliance_service.app_state(db))
+
+
+def runtime_config_response() -> RuntimeConfigResponse:
+    llm_config = runtime_config_service.get_llm_config()
+    llm_state = runtime_config_service.llm_runtime_state(llm_config)
+    return RuntimeConfigResponse(
+        api_port=settings.api_port,
+        llm_provider=llm_config.llm_provider,
+        llm_effective_provider=llm_state.effective_provider,
+        llm_configured=llm_state.configured,
+        llm_missing_envs=llm_state.missing_fields,
+        llm_notice=llm_state.notice,
+        openai_api_key_configured=bool(llm_config.openai_api_key),
+        openai_api_key_preview=runtime_config_service.api_key_preview(
+            llm_config.openai_api_key
+        ),
+        openai_base_url=llm_config.openai_base_url,
+        openai_model=llm_config.openai_model,
+        official_source_file=str(settings.official_source_file),
+    )
+
+
+@app.get("/api/runtime-config", response_model=RuntimeConfigResponse)
+def get_runtime_config() -> RuntimeConfigResponse:
+    return runtime_config_response()
+
+
+@app.put("/api/runtime-config", response_model=RuntimeConfigResponse)
+def update_runtime_config(payload: RuntimeConfigUpdateRequest) -> RuntimeConfigResponse:
+    runtime_config_service.update_llm_config(
+        llm_provider=payload.llm_provider,
+        openai_base_url=payload.openai_base_url,
+        openai_model=payload.openai_model,
+        openai_api_key=payload.openai_api_key,
+        replace_api_key=payload.replace_api_key,
+    )
+    return runtime_config_response()
+
+
+@app.post("/api/runtime-config/llm/models", response_model=LLMModelListResponse)
+async def list_runtime_models(payload: LLMRuntimeProbeRequest) -> LLMModelListResponse:
+    config = runtime_config_service.merge_test_config(
+        llm_provider=payload.llm_provider,
+        openai_base_url=payload.openai_base_url,
+        openai_model=payload.openai_model,
+        openai_api_key=payload.openai_api_key,
+        use_saved_api_key=payload.use_saved_api_key,
+    )
+    if config.llm_provider != "openai_compatible":
+        raise HTTPException(
+            status_code=400,
+            detail="Only OpenAI-compatible provider supports model listing.",
+        )
+
+    llm_state = runtime_config_service.llm_runtime_state(config, require_model=False)
+    if llm_state.missing_fields:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing required configuration: {', '.join(llm_state.missing_fields)}",
+        )
+
+    try:
+        models = await runtime_config_service.list_models(config)
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"获取模型列表失败: {error}") from error
+
+    return LLMModelListResponse(
+        provider=config.llm_provider,
+        models=models,
+        message=f"已获取 {len(models)} 个模型。",
+    )
+
+
+@app.post("/api/runtime-config/llm/test", response_model=LLMConnectionTestResponse)
+async def test_runtime_llm(
+    payload: LLMRuntimeProbeRequest,
+) -> LLMConnectionTestResponse:
+    config = runtime_config_service.merge_test_config(
+        llm_provider=payload.llm_provider,
+        openai_base_url=payload.openai_base_url,
+        openai_model=payload.openai_model,
+        openai_api_key=payload.openai_api_key,
+        use_saved_api_key=payload.use_saved_api_key,
+    )
+    if config.llm_provider != "openai_compatible":
+        raise HTTPException(
+            status_code=400,
+            detail="Only OpenAI-compatible provider supports connection testing.",
+        )
+
+    llm_state = runtime_config_service.llm_runtime_state(config)
+    if llm_state.missing_fields:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing required configuration: {', '.join(llm_state.missing_fields)}",
+        )
+
+    try:
+        result = await runtime_config_service.test_connection(config)
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"模型连接测试失败: {error}") from error
+
+    return LLMConnectionTestResponse(
+        ok=True,
+        provider=config.llm_provider,
+        model=config.openai_model,
+        latency_ms=result.get("latency_ms"),
+        reply_preview=result.get("reply_preview"),
+        message="模型连接测试通过。",
+    )
 
 
 @app.post("/api/risk-consents")
@@ -204,17 +343,9 @@ async def start_platform_session(platform: str, db: SessionDep):
     adapter = platform_gateway.get(platform)
     capability = adapter.capability()
     if not capability.session_supported:
-        raise HTTPException(status_code=409, detail="当前模块不需要平台会话。")
-
-    try:
-        await adapter.start_session(db)
-    except Exception as error:
-        raise HTTPException(
-            status_code=503,
-            detail=f"{platform} 会话启动失败：{error}",
-        ) from error
-    state = await adapter.session_state(db)
-    return platform_session_response(platform, state)
+        raise HTTPException(status_code=409, detail=f"{platform} does not use a dedicated session.")
+    await adapter.start_session(db)
+    return platform_session_response(platform, await adapter.session_state(db))
 
 
 @app.get("/api/platforms/{platform}/session", response_model=PlatformSessionResponse)
@@ -222,9 +353,8 @@ async def get_platform_session(platform: str, db: SessionDep):
     adapter = platform_gateway.get(platform)
     capability = adapter.capability()
     if not capability.session_supported:
-        raise HTTPException(status_code=409, detail="当前模块不需要平台会话。")
-    state = await adapter.session_state(db)
-    return platform_session_response(platform, state)
+        raise HTTPException(status_code=409, detail=f"{platform} does not use a dedicated session.")
+    return platform_session_response(platform, await adapter.session_state(db))
 
 
 @app.post(
@@ -235,20 +365,7 @@ async def check_platform_session_ready(platform: str, db: SessionDep):
     adapter = platform_gateway.get(platform)
     capability = adapter.capability()
     if not capability.session_supported:
-        raise HTTPException(status_code=409, detail="当前模块不需要平台会话。")
-
-    state = await adapter.session_state(db)
-    if not state.get("active"):
-        raise HTTPException(
-            status_code=409,
-            detail="请先启动平台会话，并在专用浏览器窗口中完成登录。",
-        )
-
-    await ensure_platform_search_ready(
-        platform=platform,
-        adapter=adapter,
-        blocked_hint="请先在平台会话中完成登录或验证，然后再刷新会话状态。",
-    )
+        raise HTTPException(status_code=409, detail=f"{platform} does not use a dedicated session.")
     return platform_session_response(platform, await adapter.session_state(db))
 
 
@@ -259,52 +376,52 @@ def get_risk_status(platform: str, db: SessionDep):
 
 @app.post("/api/search-sessions")
 async def create_search_session(payload: SearchSessionCreate, db: SessionDep):
-    adapter = platform_gateway.get(payload.platform)
-    capability = adapter.capability()
-    if not capability.search_supported:
-        raise HTTPException(status_code=409, detail="当前平台暂不支持搜索能力。")
-    if payload.mode == "review_in_browser" and not capability.review_open_supported:
-        raise HTTPException(status_code=409, detail="当前平台暂不支持职位浏览。")
-    if payload.mode == "guided_apply" and not capability.guided_apply_supported:
-        raise HTTPException(status_code=409, detail="当前平台暂不支持引导投递。")
-    if (
-        payload.mode == "guided_apply"
-        and not compliance_service.has_guided_apply_consent(db, payload.platform)
-    ):
-        raise HTTPException(status_code=403, detail="请先完成引导投递风险确认。")
+    platforms = list(dict.fromkeys(payload.platforms))
+    if not platforms:
+        raise HTTPException(status_code=400, detail="Select at least one platform.")
 
-    if capability.session_required:
-        state = await adapter.session_state(db)
-        if not state.get("active"):
+    adapters = platform_gateway.resolve(platforms)
+    for adapter in adapters:
+        capability = adapter.capability()
+        if not capability.selectable:
+            raise HTTPException(status_code=409, detail=capability.disabled_reason or f"{adapter.platform} is disabled.")
+        if not capability.search_supported:
+            raise HTTPException(status_code=409, detail=f"{adapter.platform} does not support search.")
+        if payload.mode == "review_in_browser" and not capability.review_open_supported:
+            raise HTTPException(status_code=409, detail=f"{adapter.platform} does not support browser review.")
+        if payload.mode == "guided_apply" and not capability.guided_apply_supported:
+            raise HTTPException(status_code=409, detail=f"{adapter.platform} does not support guided apply.")
+        if (
+            payload.mode == "guided_apply"
+            and not compliance_service.has_guided_apply_consent(db, adapter.platform)
+        ):
             raise HTTPException(
-                status_code=409,
-                detail="请先启动平台会话，并完成登录或验证。",
+                status_code=403,
+                detail=f"Guided apply consent is required for {adapter.platform}.",
             )
-        if not state.get("search_ready"):
-            await ensure_platform_search_ready(
-                platform=payload.platform,
-                adapter=adapter,
-                blocked_hint="请先完成会话验证，再开始搜索。",
-            )
-            state = await adapter.session_state(db)
-            if not state.get("search_ready"):
-                raise HTTPException(status_code=409, detail="平台会话尚未通过就绪检查。")
+        await ensure_platform_search_ready(adapter.platform, db)
 
-    return await search_service.create_session(db, payload)
+    normalized_payload = SearchSessionCreate(
+        platforms=platforms,
+        mode=payload.mode,
+        job_targets=payload.job_targets,
+        cities=payload.cities,
+        salary_floor=payload.salary_floor,
+        must_have_keywords=payload.must_have_keywords,
+    )
+    return await search_service.create_session(db, normalized_payload)
 
 
 @app.get("/api/search-sessions")
 def list_search_sessions(db: SessionDep):
-    return db.exec(
-        select(SearchSession).order_by(SearchSession.created_at.desc())
-    ).all()
+    return db.exec(select(SearchSession).order_by(SearchSession.created_at.desc())).all()
 
 
 @app.get("/api/search-sessions/{session_id}")
 def get_search_session(session_id: str, db: SessionDep):
     session = db.get(SearchSession, session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="搜索任务不存在。")
+        raise HTTPException(status_code=404, detail="Search session not found.")
     return session
 
 
@@ -313,9 +430,12 @@ async def retry_search_session(session_id: str, db: SessionDep):
     return await search_service.retry_session(db, session_id)
 
 
-@app.post("/api/search-sessions/{session_id}/open-verification")
+@app.post(
+    "/api/search-sessions/{session_id}/open-verification",
+    response_model=VerificationWindowResponse,
+)
 async def open_search_verification(session_id: str, db: SessionDep):
-    return await search_service.reopen_verification(db, session_id)
+    return VerificationWindowResponse(**(await search_service.reopen_verification(db, session_id)))
 
 
 @app.get("/api/search-sessions/{session_id}/matches", response_model=list[JobMatchResponse])
@@ -327,9 +447,7 @@ def get_search_matches(session_id: str, db: SessionDep):
     ).all()
     jobs = {
         job.id: job
-        for job in db.exec(
-            select(JobListing).where(JobListing.session_id == session_id)
-        ).all()
+        for job in db.exec(select(JobListing).where(JobListing.session_id == session_id)).all()
     }
     return [
         match_response(match, jobs[match.job_id])
@@ -351,78 +469,135 @@ async def stream_search_events(session_id: str):
 async def open_review(job_id: str, db: SessionDep):
     job = db.get(JobListing, job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="职位不存在。")
+        raise HTTPException(status_code=404, detail="Job not found.")
     adapter = platform_gateway.get(job.platform)
     capability = adapter.capability()
     if not capability.review_open_supported:
-        raise HTTPException(status_code=409, detail="当前平台暂不支持职位浏览。")
-    message = await adapter.open_review(job.url)
+        raise HTTPException(status_code=409, detail=f"{job.platform} does not support review.")
+    message = await adapter.open_review(job.detail_url or job.url)
     return {"message": message}
 
 
-@app.post("/api/jobs/{job_id}/guided-apply")
+@app.post("/api/jobs/{job_id}/guided-apply", response_model=ApplicationAttemptResponse)
 async def guided_apply(job_id: str, db: SessionDep):
     job = db.get(JobListing, job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="职位不存在。")
+        raise HTTPException(status_code=404, detail="Job not found.")
     adapter = platform_gateway.get(job.platform)
     capability = adapter.capability()
     if not capability.guided_apply_supported:
-        raise HTTPException(status_code=409, detail="当前平台暂不支持引导投递。")
+        raise HTTPException(status_code=409, detail=f"{job.platform} does not support guided apply.")
     if not compliance_service.has_guided_apply_consent(db, job.platform):
-        raise HTTPException(status_code=403, detail="请先完成引导投递风险确认。")
+        raise HTTPException(status_code=403, detail=f"Guided apply consent is required for {job.platform}.")
 
     risk_control_service.ensure_guided_apply_allowed(db, job.platform)
     profile = profile_service.load_or_create(db)
+    if not profile.source_filename:
+        raise HTTPException(status_code=409, detail="Upload a resume before starting guided apply.")
 
     attempt = ApplicationAttempt(
         job_id=job.id,
         platform=job.platform,
         mode="guided_apply",
         status="running",
-        message="正在准备引导投递流程，并会在最终提交前停止。",
+        message="Preparing official guided apply flow.",
     )
     db.add(attempt)
     db.commit()
     db.refresh(attempt)
 
     try:
-        message = await adapter.guided_apply(job.url, profile)
-        attempt.status = "prepared"
-        attempt.message = message
+        outcome = await adapter.guided_apply(job, profile)
+        attempt.status = outcome.status
+        attempt.message = outcome.message
+        attempt.verification_url = outcome.verification_url
+        attempt.launch_url = outcome.launch_url
+        attempt.context = outcome.context
         attempt.updated_at = datetime.utcnow()
         db.add(attempt)
         db.commit()
         db.refresh(attempt)
-        return attempt
+        return attempt_response(attempt)
     except Exception as error:
         attempt.status = "failed"
         attempt.message = str(error)
         attempt.updated_at = datetime.utcnow()
         db.add(attempt)
         db.commit()
-        raise
+        db.refresh(attempt)
+        raise HTTPException(status_code=500, detail=str(error)) from error
 
 
-@app.get("/api/application-attempts")
+@app.get("/api/application-attempts", response_model=list[ApplicationAttemptResponse])
 def list_application_attempts(db: SessionDep):
-    return db.exec(
+    attempts = db.exec(
         select(ApplicationAttempt).order_by(ApplicationAttempt.created_at.desc())
     ).all()
+    return [attempt_response(attempt) for attempt in attempts]
 
 
-@app.post("/api/application-attempts/{attempt_id}/cancel")
-def cancel_application_attempt(attempt_id: str, db: SessionDep):
+@app.get("/api/application-attempts/{attempt_id}", response_model=ApplicationAttemptResponse)
+def get_application_attempt(attempt_id: str, db: SessionDep):
     attempt = db.get(ApplicationAttempt, attempt_id)
     if not attempt:
-        raise HTTPException(status_code=404, detail="投递记录不存在。")
-    attempt.status = "cancelled"
+        raise HTTPException(status_code=404, detail="Application attempt not found.")
+    return attempt_response(attempt)
+
+
+@app.post(
+    "/api/application-attempts/{attempt_id}/open-verification-window",
+    response_model=VerificationWindowResponse,
+)
+def open_application_attempt_verification(attempt_id: str, db: SessionDep):
+    attempt = db.get(ApplicationAttempt, attempt_id)
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Application attempt not found.")
+    if not attempt.verification_url:
+        raise HTTPException(status_code=409, detail="This attempt does not require verification.")
     attempt.updated_at = datetime.utcnow()
-    attempt.message = "已由用户取消。"
+    db.add(attempt)
+    db.commit()
+    return VerificationWindowResponse(
+        url=attempt.verification_url,
+        title=f"{attempt.platform} verification",
+        message="Complete any login or captcha steps in the in-app popup, then continue the attempt.",
+    )
+
+
+@app.post(
+    "/api/application-attempts/{attempt_id}/continue",
+    response_model=ApplicationAttemptResponse,
+)
+def continue_application_attempt(attempt_id: str, db: SessionDep):
+    attempt = db.get(ApplicationAttempt, attempt_id)
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Application attempt not found.")
+    if attempt.status != "needs_verification":
+        raise HTTPException(status_code=409, detail="This attempt is not waiting for verification.")
+
+    attempt.status = "prepared"
+    attempt.message = (
+        "Verification window closed. Official apply flow can continue from the prepared state."
+    )
+    attempt.updated_at = datetime.utcnow()
     db.add(attempt)
     db.commit()
     db.refresh(attempt)
-    return attempt
+    return attempt_response(attempt)
+
+
+@app.post("/api/application-attempts/{attempt_id}/cancel", response_model=ApplicationAttemptResponse)
+def cancel_application_attempt(attempt_id: str, db: SessionDep):
+    attempt = db.get(ApplicationAttempt, attempt_id)
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Application attempt not found.")
+    attempt.status = "cancelled"
+    attempt.updated_at = datetime.utcnow()
+    attempt.message = "Cancelled by user."
+    db.add(attempt)
+    db.commit()
+    db.refresh(attempt)
+    return attempt_response(attempt)
 
 
 @app.post("/api/emergency-stop")

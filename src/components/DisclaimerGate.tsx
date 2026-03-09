@@ -31,7 +31,7 @@ export function DisclaimerGate() {
             <p className="text-xs uppercase tracking-[0.24em] text-ember">
               {"\u5fc5\u8bfb\u544a\u77e5"}
             </p>
-            <h2 className="mt-2 font-display text-4xl italic text-ink">
+            <h2 className="mt-2 font-display text-4xl text-ink">
               {"\u4ec5\u652f\u6301\u7528\u6237\u4e3b\u5bfc\u7684\u81ea\u52a8\u5316"}
             </h2>
             <div className="mt-5 space-y-4 text-sm leading-7 text-slate">

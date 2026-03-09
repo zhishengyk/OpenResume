@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from .demo import demo_adapter
-from .liepin import liepin_adapter
+from .boss import boss_adapter
+from .official import official_adapter
 
 
 REGISTERED_ADAPTERS = (
-    demo_adapter,
-    liepin_adapter,
+    official_adapter,
+    boss_adapter,
 )

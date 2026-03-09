@@ -15,6 +15,7 @@ export type ApplicationAttemptStatus =
   | "queued"
   | "running"
   | "prepared"
+  | "needs_verification"
   | "blocked"
   | "failed"
   | "cancelled";
@@ -45,6 +46,8 @@ export interface PlatformCapability {
   guided_apply_supported: boolean;
   session_supported: boolean;
   session_required: boolean;
+  selectable: boolean;
+  disabled_reason?: string | null;
   rule_pack_version: string;
 }
 
@@ -59,7 +62,7 @@ export interface PlatformSession {
 
 export interface SearchSession {
   id: string;
-  platform: string;
+  requested_platforms: string[];
   mode: AutomationMode;
   status: SearchSessionStatus;
   job_targets: string[];
@@ -70,6 +73,9 @@ export interface SearchSession {
   updated_at: string;
   blocked_reason?: string | null;
   summary?: string | null;
+  analysis_provider: string;
+  analysis_degraded: boolean;
+  analysis_notice?: string | null;
 }
 
 export interface JobMatch {
@@ -85,6 +91,12 @@ export interface JobMatch {
   degree_text: string;
   work_mode: string;
   url: string;
+  detail_url?: string | null;
+  apply_url?: string | null;
+  source_company_url?: string | null;
+  apply_requires_login: boolean;
+  apply_supported: boolean;
+  jd_text: string;
   jd_excerpt: string;
   rule_score: number;
   llm_score?: number | null;
@@ -94,6 +106,9 @@ export interface JobMatch {
   risk_flags: string[];
   llm_summary?: string | null;
   cached_llm: boolean;
+  analysis_provider: string;
+  analysis_degraded: boolean;
+  analysis_notice?: string | null;
 }
 
 export interface ApplicationAttempt {
@@ -105,6 +120,9 @@ export interface ApplicationAttempt {
   created_at: string;
   updated_at: string;
   message: string;
+  verification_url?: string | null;
+  launch_url?: string | null;
+  context: Record<string, unknown>;
 }
 
 export interface RiskConsent {
@@ -130,10 +148,61 @@ export interface AppState {
   emergency_stop_active: boolean;
 }
 
+export interface RuntimeConfig {
+  api_port: number;
+  llm_provider: string;
+  llm_effective_provider: string;
+  llm_configured: boolean;
+  llm_missing_envs: string[];
+  llm_notice: string;
+  openai_api_key_configured: boolean;
+  openai_api_key_preview?: string | null;
+  openai_base_url?: string | null;
+  openai_model?: string | null;
+  official_source_file: string;
+}
+
+export interface RuntimeConfigUpdatePayload {
+  llm_provider: string;
+  openai_base_url?: string | null;
+  openai_model?: string | null;
+  openai_api_key?: string | null;
+  replace_api_key?: boolean;
+}
+
+export interface LLMRuntimeProbePayload {
+  llm_provider: string;
+  openai_base_url?: string | null;
+  openai_model?: string | null;
+  openai_api_key?: string | null;
+  use_saved_api_key?: boolean;
+}
+
+export interface LLMConnectionTestResult {
+  ok: boolean;
+  provider: string;
+  model?: string | null;
+  latency_ms?: number | null;
+  reply_preview?: string | null;
+  message: string;
+}
+
+export interface LLMModelListResult {
+  provider: string;
+  models: string[];
+  message: string;
+}
+
 export interface SearchEvent {
   type: string;
   session_id: string;
   message: string;
   timestamp: string;
   payload?: Record<string, unknown>;
+}
+
+export interface VerificationWindowPayload {
+  url: string;
+  title: string;
+  message: string;
 }

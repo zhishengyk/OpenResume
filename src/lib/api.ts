@@ -3,18 +3,25 @@ import type {
   ApplicationAttempt,
   CandidateProfile,
   JobMatch,
+  LLMConnectionTestResult,
+  LLMModelListResult,
+  LLMRuntimeProbePayload,
   PlatformCapability,
   PlatformSession,
   RiskConsent,
   RiskStatus,
+  RuntimeConfig,
+  RuntimeConfigUpdatePayload,
   SearchSession,
+  VerificationWindowPayload,
 } from "../types";
 
 declare global {
   interface Window {
     openResumeDesktop?: {
       apiBaseUrl?: string;
-      openExternal?: (url: string) => void;
+      openExternal?: (url: string) => Promise<unknown>;
+      openVerificationWindow?: (url: string, title?: string) => Promise<{ closed: boolean }>;
     };
   }
 }
@@ -33,7 +40,7 @@ function extractErrorMessage(detail: string): string {
       return payload.detail;
     }
   } catch {
-    // Ignore JSON parse errors and use the raw response text instead.
+    // Ignore parse failures and return the raw body.
   }
 
   return detail;
@@ -48,15 +55,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const message =
       error instanceof Error && error.message
         ? error.message
-        : "unknown network error";
+        : "未知网络错误";
     throw new Error(
-      `本地接口连接失败，请确认 OpenResume 后端仍在运行。原始错误: ${message}`,
+      `本地接口不可用，请确认 OpenResume 后端正在运行。原始错误：${message}`,
     );
   }
 
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(extractErrorMessage(detail));
+    throw new Error(extractErrorMessage(await response.text()));
   }
 
   if (response.status === 204) {
@@ -70,6 +76,25 @@ export const apiBaseUrl = API_BASE;
 
 export const api = {
   getAppState: () => request<AppState>("/api/app-state"),
+  getRuntimeConfig: () => request<RuntimeConfig>("/api/runtime-config"),
+  updateRuntimeConfig: (payload: RuntimeConfigUpdatePayload) =>
+    request<RuntimeConfig>("/api/runtime-config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  listRuntimeModels: (payload: LLMRuntimeProbePayload) =>
+    request<LLMModelListResult>("/api/runtime-config/llm/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  testRuntimeLLM: (payload: LLMRuntimeProbePayload) =>
+    request<LLMConnectionTestResult>("/api/runtime-config/llm/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
   acceptDisclaimer: () =>
     request<RiskConsent>("/api/risk-consents", {
       method: "POST",
@@ -82,7 +107,6 @@ export const api = {
   uploadResume: async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-
     return request<CandidateProfile>("/api/resume/upload", {
       method: "POST",
       body: formData,
@@ -121,7 +145,7 @@ export const api = {
   getRiskStatus: (platform: string) =>
     request<RiskStatus>(`/api/platforms/${platform}/risk-status`),
   createSearchSession: (payload: {
-    platform: string;
+    platforms: string[];
     mode: string;
     job_targets: string[];
     cities: string[];
@@ -141,12 +165,9 @@ export const api = {
       method: "POST",
     }),
   openSearchVerification: (id: string) =>
-    request<{ message: string }>(
-      `/api/search-sessions/${id}/open-verification`,
-      {
-        method: "POST",
-      },
-    ),
+    request<VerificationWindowPayload>(`/api/search-sessions/${id}/open-verification`, {
+      method: "POST",
+    }),
   getSearchMatches: (id: string) =>
     request<JobMatch[]>(`/api/search-sessions/${id}/matches`),
   openReview: (jobId: string) =>
@@ -159,6 +180,18 @@ export const api = {
     }),
   listAttempts: () =>
     request<ApplicationAttempt[]>("/api/application-attempts"),
+  getAttempt: (attemptId: string) =>
+    request<ApplicationAttempt>(`/api/application-attempts/${attemptId}`),
+  openAttemptVerificationWindow: (attemptId: string) =>
+    request<VerificationWindowPayload>(
+      `/api/application-attempts/${attemptId}/open-verification-window`,
+      { method: "POST" },
+    ),
+  continueAttempt: (attemptId: string) =>
+    request<ApplicationAttempt>(
+      `/api/application-attempts/${attemptId}/continue`,
+      { method: "POST" },
+    ),
   cancelAttempt: (attemptId: string) =>
     request<ApplicationAttempt>(
       `/api/application-attempts/${attemptId}/cancel`,

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Search as SearchIcon, ShieldAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { splitCommaValues } from "../lib/utils";
@@ -15,42 +15,42 @@ const modeCards: Array<{
   {
     mode: "recommend_only",
     title: "仅推荐",
-    body: "只负责搜索、筛选和排序岗位，不在平台上执行任何动作。",
+    body: "只做官网搜索、清洗和排序，不打开页面，也不发起投递。",
   },
   {
     mode: "review_in_browser",
-    title: "浏览职位",
-    body: "打开职位详情页，由你自己判断是否继续。",
+    title: "查看岗位",
+    body: "打开清洗后的官网岗位详情，在本地逐条判断是否继续。",
     capabilityFlag: "review_open_supported",
   },
   {
     mode: "guided_apply",
     title: "引导投递",
-    body: "允许模块帮你推进流程，但仍会在最终提交前停止。",
+    body: "进入官网投递流程，登录和验证码统一在应用内小窗处理。",
     capabilityFlag: "guided_apply_supported",
   },
 ];
 
-function supportsMode(capability: PlatformCapability | null, mode: AutomationMode) {
+function modeSupported(platforms: PlatformCapability[], mode: AutomationMode) {
   const card = modeCards.find((entry) => entry.mode === mode);
-  if (!card || !card.capabilityFlag) {
+  const flag = card?.capabilityFlag;
+  if (!flag) {
     return true;
   }
-
-  return Boolean(capability?.[card.capabilityFlag]);
+  return platforms.every((platform) => platform[flag]);
 }
 
 export function SearchPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const [platform, setPlatform] = useState("");
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [mode, setMode] = useState<AutomationMode>("recommend_only");
   const [jobTargets, setJobTargets] = useState("前端工程师, 全栈工程师");
   const [cities, setCities] = useState("上海, 杭州");
   const [salaryFloor, setSalaryFloor] = useState("25000");
   const [mustHaveKeywords, setMustHaveKeywords] = useState(
-    "React, TypeScript, Node.js",
+    "React, TypeScript, 官网",
   );
 
   const platformsQuery = useQuery({
@@ -66,55 +66,57 @@ export function SearchPage() {
     if (!platformsQuery.data?.length) {
       return;
     }
-    if (platform && platformsQuery.data.some((item) => item.platform === platform)) {
-      return;
-    }
+    const selectable = platformsQuery.data
+      .filter((item) => item.selectable && item.search_supported)
+      .map((item) => item.platform);
+    setSelectedPlatforms((current) => {
+      const valid = current.filter((item) => selectable.includes(item));
+      if (valid.length) {
+        return valid;
+      }
+      return selectable.slice(0, 1);
+    });
+  }, [platformsQuery.data]);
 
-    const preferredPlatform =
-      platformsQuery.data.find((item) => item.search_supported) ||
-      platformsQuery.data[0];
-    setPlatform(preferredPlatform.platform);
-  }, [platformsQuery.data, platform]);
-
-  const selectedPlatform =
-    platformsQuery.data?.find((item) => item.platform === platform) || null;
+  const selectedPlatformCapabilities = useMemo(
+    () =>
+      (platformsQuery.data || []).filter((item) =>
+        selectedPlatforms.includes(item.platform),
+      ),
+    [platformsQuery.data, selectedPlatforms],
+  );
+  const firstSelectedPlatform = selectedPlatformCapabilities[0]?.platform;
 
   useEffect(() => {
-    if (!selectedPlatform || supportsMode(selectedPlatform, mode)) {
+    if (
+      !selectedPlatformCapabilities.length ||
+      modeSupported(selectedPlatformCapabilities, mode)
+    ) {
       return;
     }
     setMode("recommend_only");
-  }, [selectedPlatform, mode]);
+  }, [selectedPlatformCapabilities, mode]);
 
   const riskStatusQuery = useQuery({
-    queryKey: ["risk-status", platform],
-    queryFn: () => api.getRiskStatus(platform),
-    enabled: Boolean(platform),
-  });
-  const sessionQuery = useQuery({
-    queryKey: ["platform-session", platform],
-    queryFn: () => api.getPlatformSession(platform),
-    enabled: Boolean(platform && selectedPlatform?.session_supported),
-    refetchInterval:
-      platform && selectedPlatform?.session_supported ? 4000 : false,
+    queryKey: ["risk-status", firstSelectedPlatform],
+    queryFn: () => api.getRiskStatus(firstSelectedPlatform!),
+    enabled: Boolean(firstSelectedPlatform),
   });
 
-  const sessionStartMutation = useMutation({
-    mutationFn: () => api.startPlatformSession(platform),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["platform-session", platform] });
-    },
-  });
-
-  const sessionReadyMutation = useMutation({
-    mutationFn: () => api.checkPlatformSessionReady(platform),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["platform-session", platform] });
-    },
-  });
+  const guidedApplyEnabled =
+    selectedPlatformCapabilities.length > 0 &&
+    selectedPlatformCapabilities.every((platform) =>
+      appStateQuery.data?.guided_apply_consents.includes(platform.platform),
+    );
 
   const guidedConsentMutation = useMutation({
-    mutationFn: () => api.createGuidedApplyConsent(platform),
+    mutationFn: async () => {
+      await Promise.all(
+        selectedPlatformCapabilities.map((platform) =>
+          api.createGuidedApplyConsent(platform.platform),
+        ),
+      );
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["app-state"] });
     },
@@ -123,7 +125,7 @@ export function SearchPage() {
   const searchMutation = useMutation({
     mutationFn: () =>
       api.createSearchSession({
-        platform,
+        platforms: selectedPlatforms,
         mode,
         job_targets: splitCommaValues(jobTargets),
         cities: splitCommaValues(cities),
@@ -136,49 +138,28 @@ export function SearchPage() {
     },
   });
 
-  const guidedApplyEnabled = Boolean(
-    platform && appStateQuery.data?.guided_apply_consents.includes(platform),
-  );
-  const sessionActive = Boolean(sessionQuery.data?.active);
-  const sessionReady = Boolean(sessionQuery.data?.search_ready);
-  const needsSessionStart = Boolean(
-    selectedPlatform?.session_required && !sessionActive,
-  );
-  const needsSessionReady = Boolean(
-    selectedPlatform?.session_required && sessionActive && !sessionReady,
-  );
-
   const searchErrorMessage =
     searchMutation.isError && searchMutation.error instanceof Error
       ? searchMutation.error.message
       : null;
-  const sessionErrorMessage =
-    sessionReadyMutation.isError && sessionReadyMutation.error instanceof Error
-      ? sessionReadyMutation.error.message
-      : null;
 
   const searchDisabled =
-    !selectedPlatform ||
-    !selectedPlatform.search_supported ||
+    selectedPlatformCapabilities.length === 0 ||
+    !modeSupported(selectedPlatformCapabilities, mode) ||
     searchMutation.isPending ||
-    sessionStartMutation.isPending ||
-    sessionReadyMutation.isPending ||
-    needsSessionStart ||
-    needsSessionReady ||
     (mode === "guided_apply" && !guidedApplyEnabled);
 
   return (
     <div className="space-y-6">
       <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
         <p className="text-xs uppercase tracking-[0.24em] text-slate">
-          搜索控制台
+          搜索工作台
         </p>
-        <h1 className="mt-3 font-display text-5xl italic text-ink">
-          公共层只调度模块，平台细节留在模块内部。
+        <h1 className="mt-3 font-display text-5xl text-ink">
+          多平台搜索从官网模块开始，未接入平台保留占位。
         </h1>
         <p className="mt-4 max-w-3xl text-sm leading-7 text-slate">
-          你现在选择的是一个平台注册入口，主分支不会再把某个平台的登录流程、
-          浏览器策略和风控逻辑硬编码进公共页面。
+          岗位会先从配置好的官网来源抓取，再经过代码清洗，最后进入模型排序阶段。尚未接入的平台会保留展示，但不可勾选。
         </p>
       </section>
 
@@ -186,7 +167,7 @@ export function SearchPage() {
         <div className="space-y-6">
           <div className="grid gap-4 md:grid-cols-3">
             {modeCards.map((entry) => {
-              const available = supportsMode(selectedPlatform, entry.mode);
+              const available = modeSupported(selectedPlatformCapabilities, entry.mode);
               return (
                 <button
                   type="button"
@@ -204,7 +185,7 @@ export function SearchPage() {
                         : "cursor-not-allowed border-ink/10 bg-shell/60 text-slate"
                   }`}
                 >
-                  <p className="font-display text-3xl italic">{entry.title}</p>
+                  <p className="font-display text-3xl">{entry.title}</p>
                   <p className="mt-3 text-sm leading-7 opacity-80">{entry.body}</p>
                 </button>
               );
@@ -213,22 +194,52 @@ export function SearchPage() {
 
           <div className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
             <div className="grid gap-5 md:grid-cols-2">
-              <label className="space-y-2">
+              <div className="space-y-3">
                 <span className="text-xs uppercase tracking-[0.2em] text-slate">
-                  平台模块
+                  平台
                 </span>
-                <select
-                  value={platform}
-                  onChange={(event) => setPlatform(event.target.value)}
-                  className="w-full rounded-2xl border border-ink/10 bg-paper px-4 py-3 text-sm text-ink outline-none transition focus:border-ink/30"
-                >
-                  {platformsQuery.data?.map((item) => (
-                    <option key={item.platform} value={item.platform}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                <div className="space-y-3">
+                  {platformsQuery.data?.map((platform) => {
+                    const checked = selectedPlatforms.includes(platform.platform);
+                    return (
+                      <label
+                        key={platform.platform}
+                        className={`flex items-start gap-3 rounded-2xl border px-4 py-3 ${
+                          platform.selectable
+                            ? "border-ink/10 bg-paper"
+                            : "border-ink/10 bg-paper/60 text-slate"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={!platform.selectable}
+                          onChange={(event) => {
+                            if (!platform.selectable) {
+                              return;
+                            }
+                            setSelectedPlatforms((current) =>
+                              event.target.checked
+                                ? [...current, platform.platform]
+                                : current.filter((item) => item !== platform.platform),
+                            );
+                          }}
+                          className="mt-1"
+                        />
+                        <div>
+                          <p className="font-semibold text-ink">{platform.label}</p>
+                          <p className="mt-1 text-sm leading-6 text-slate">
+                            {platform.selectable
+                              ? "已接入"
+                              : platform.disabled_reason || "暂未接入"}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
               <label className="space-y-2">
                 <span className="text-xs uppercase tracking-[0.2em] text-slate">
                   薪资下限
@@ -265,7 +276,7 @@ export function SearchPage() {
 
             <label className="mt-5 block space-y-2">
               <span className="text-xs uppercase tracking-[0.2em] text-slate">
-                必须命中关键词
+                必备关键词
               </span>
               <textarea
                 rows={4}
@@ -276,37 +287,7 @@ export function SearchPage() {
             </label>
 
             <div className="mt-6 flex flex-wrap gap-3">
-              {selectedPlatform?.session_supported ? (
-                <button
-                  type="button"
-                  className="rounded-full border border-ink/10 bg-shell px-6 py-3 text-sm font-semibold text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-60"
-                  onClick={() => sessionStartMutation.mutate()}
-                  disabled={sessionStartMutation.isPending}
-                >
-                  {sessionStartMutation.isPending
-                    ? "正在打开平台会话..."
-                    : "启动 / 重新打开平台会话"}
-                </button>
-              ) : null}
-
-              {selectedPlatform?.session_supported ? (
-                <button
-                  type="button"
-                  className="rounded-full border border-ink/10 bg-shell px-6 py-3 text-sm font-semibold text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-60"
-                  onClick={() => sessionReadyMutation.mutate()}
-                  disabled={
-                    sessionReadyMutation.isPending || sessionStartMutation.isPending
-                  }
-                >
-                  {sessionReadyMutation.isPending
-                    ? "正在检查会话状态..."
-                    : "刷新会话状态"}
-                </button>
-              ) : null}
-
-              {mode === "guided_apply" &&
-              selectedPlatform?.guided_apply_supported &&
-              !guidedApplyEnabled ? (
+              {mode === "guided_apply" && !guidedApplyEnabled ? (
                 <button
                   type="button"
                   className="rounded-full bg-ember px-6 py-3 text-sm font-semibold text-shell transition hover:bg-ember/90"
@@ -326,32 +307,19 @@ export function SearchPage() {
                 disabled={searchDisabled}
               >
                 <SearchIcon size={16} />
-                {searchMutation.isPending ? "正在启动任务..." : "开始搜索任务"}
+                {searchMutation.isPending ? "正在启动..." : "开始搜索"}
               </button>
             </div>
 
-            {selectedPlatform && !selectedPlatform.search_supported ? (
+            {!selectedPlatformCapabilities.length ? (
               <p className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-ink">
-                当前模块还没有接入真实搜索能力。你可以继续保留它作为占位模块，
-                等后续按同样边界补齐实现。
+                请至少选择一个已接入的平台。未接入的平台会保留展示，但不能勾选。
               </p>
             ) : null}
 
-            {needsSessionStart ? (
+            {mode === "guided_apply" && !guidedApplyEnabled ? (
               <p className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-ink">
-                当前模块要求独立会话。请先启动平台会话并完成登录。
-              </p>
-            ) : null}
-
-            {needsSessionReady ? (
-              <p className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-ink">
-                当前模块会话已激活，但还没有通过就绪检查。先完成验证，再开始搜索。
-              </p>
-            ) : null}
-
-            {sessionErrorMessage ? (
-              <p className="mt-4 rounded-2xl border border-ember/30 bg-ember/10 px-4 py-3 text-sm leading-6 text-ink">
-                {sessionErrorMessage}
+                引导投递模式要求你先对当前选中的每个平台完成风险确认。
               </p>
             ) : null}
 
@@ -369,10 +337,10 @@ export function SearchPage() {
               <ShieldAlert className="mt-1 text-ember" size={18} />
               <div>
                 <p className="text-xs uppercase tracking-[0.24em] text-ember">
-                  风险姿态
+                  验证方式
                 </p>
                 <p className="mt-3 text-sm leading-7 text-slate">
-                  模块可以声明自己的能力边界，但公共层不会帮任何模块默认获取高权限动作。
+                  官网搜索和投递过程中可能会遇到登录、验证码或二次校验。这些步骤统一在应用内小窗里完成，而不是跳到外部浏览器。
                 </p>
               </div>
             </div>
@@ -385,23 +353,23 @@ export function SearchPage() {
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <div className="rounded-[24px] bg-paper p-4">
                 <p className="text-xs uppercase tracking-[0.18em] text-slate">
-                  每小时剩余次数
+                  每小时剩余
                 </p>
-                <p className="mt-2 font-display text-4xl italic text-ink">
+                <p className="mt-2 font-display text-4xl text-ink">
                   {riskStatusQuery.data?.remaining_hourly ?? "--"}
                 </p>
               </div>
               <div className="rounded-[24px] bg-paper p-4">
                 <p className="text-xs uppercase tracking-[0.18em] text-slate">
-                  每日剩余次数
+                  每日剩余
                 </p>
-                <p className="mt-2 font-display text-4xl italic text-ink">
+                <p className="mt-2 font-display text-4xl text-ink">
                   {riskStatusQuery.data?.remaining_daily ?? "--"}
                 </p>
               </div>
             </div>
             <p className="mt-5 text-sm leading-7 text-slate">
-              冷却时间：
+              冷却到期：
               {riskStatusQuery.data?.cooldown_until
                 ? new Date(riskStatusQuery.data.cooldown_until).toLocaleString()
                 : "无"}
@@ -410,22 +378,20 @@ export function SearchPage() {
             <div className="mt-5 rounded-[24px] border border-ink/10 bg-paper p-4">
               <div className="flex items-center gap-2 text-ink">
                 <AlertTriangle size={16} />
-                <p className="font-semibold">
-                  {selectedPlatform?.label || "当前模块"} 能力摘要
-                </p>
+                <p className="font-semibold">已选平台能力</p>
               </div>
-              <p className="mt-3 text-sm leading-7 text-slate">
-                搜索：{selectedPlatform?.search_supported ? "支持" : "未启用"} ·
-                浏览：{selectedPlatform?.review_open_supported ? "支持" : "未启用"} ·
-                引导投递：
-                {selectedPlatform?.guided_apply_supported ? "支持" : "未启用"} ·
-                独立会话：
-                {selectedPlatform?.session_required
-                  ? "必需"
-                  : selectedPlatform?.session_supported
-                    ? "可选"
-                    : "无"}
-              </p>
+              <div className="mt-3 space-y-3 text-sm leading-7 text-slate">
+                {selectedPlatformCapabilities.map((platform) => (
+                  <div key={platform.platform}>
+                    <p className="font-semibold text-ink">{platform.label}</p>
+                    <p>
+                      搜索：{platform.search_supported ? "支持" : "不支持"} · 查看：
+                      {platform.review_open_supported ? "支持" : "不支持"} · 引导投递：
+                      {platform.guided_apply_supported ? "支持" : "不支持"}
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

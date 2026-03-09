@@ -4,6 +4,18 @@ import { StatusPill } from "../components/StatusPill";
 import { api } from "../lib/api";
 import { modeLabel, pillLabel } from "../lib/utils";
 
+async function openVerificationPopup(url: string, title: string) {
+  if (window.openResumeDesktop?.openVerificationWindow) {
+    await window.openResumeDesktop.openVerificationWindow(url, title);
+    return;
+  }
+  if (window.openResumeDesktop?.openExternal) {
+    window.openResumeDesktop.openExternal(url);
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 export function HistoryPage() {
   const queryClient = useQueryClient();
   const sessionsQuery = useQuery({
@@ -35,6 +47,17 @@ export function HistoryPage() {
     },
   });
 
+  const continueMutation = useMutation({
+    mutationFn: async (attemptId: string) => {
+      const verification = await api.openAttemptVerificationWindow(attemptId);
+      await openVerificationPopup(verification.url, verification.title);
+      return api.continueAttempt(attemptId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["attempts"] });
+    },
+  });
+
   return (
     <div className="space-y-6">
       <section className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
@@ -45,21 +68,18 @@ export function HistoryPage() {
               <p className="text-xs uppercase tracking-[0.24em] text-ember">
                 紧急停止
               </p>
-              <p className="mt-3 font-display text-4xl italic text-ink">
-                立刻终止所有引导动作
+              <p className="mt-3 font-display text-4xl text-ink">
+                立即暂停所有引导动作
               </p>
               <p className="mt-4 text-sm leading-7 text-slate">
-                页面结构异常、出现验证页，或者你不希望系统继续推进任何排队动作时，
-                可以直接在这里拉起急停。
+                如果官网页面出现异常，或者你不希望系统继续推进任何引导投递，可以在这里直接拉起紧急停止。
               </p>
               <button
                 type="button"
                 className="mt-6 rounded-full bg-ink px-6 py-3 text-sm font-semibold text-shell transition hover:bg-ink/90"
                 onClick={() => emergencyStopMutation.mutate()}
               >
-                {appStateQuery.data?.emergency_stop_active
-                  ? "解除紧急停止"
-                  : "启用紧急停止"}
+                {appStateQuery.data?.emergency_stop_active ? "解除紧急停止" : "启用紧急停止"}
               </button>
             </div>
           </div>
@@ -81,9 +101,17 @@ export function HistoryPage() {
                       {session.job_targets.join(" / ")}
                     </p>
                     <p className="mt-1 text-sm text-slate">
-                      {pillLabel(session.platform)} · {modeLabel(session.mode)} ·{" "}
+                      {session.requested_platforms
+                        .map((platform) => pillLabel(platform))
+                        .join(" · ")}{" "}
+                      · {modeLabel(session.mode)} ·{" "}
                       {new Date(session.created_at).toLocaleString()}
                     </p>
+                    {session.analysis_notice ? (
+                      <p className="mt-2 text-sm leading-6 text-slate">
+                        {session.analysis_notice}
+                      </p>
+                    ) : null}
                   </div>
                   <StatusPill>{session.status}</StatusPill>
                 </div>
@@ -95,7 +123,7 @@ export function HistoryPage() {
 
       <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
         <p className="text-xs uppercase tracking-[0.24em] text-slate">
-          引导动作记录
+          投递记录
         </p>
         <div className="mt-5 space-y-3">
           {attemptsQuery.data?.map((attempt) => (
@@ -104,7 +132,9 @@ export function HistoryPage() {
               className="flex flex-wrap items-center justify-between gap-4 rounded-[24px] border border-ink/10 bg-paper px-4 py-4"
             >
               <div>
-                <p className="font-semibold text-ink">{attempt.job_id}</p>
+                <p className="font-semibold text-ink">
+                  {(attempt.context.job_title as string | undefined) || attempt.job_id}
+                </p>
                 <p className="mt-1 text-sm text-slate">
                   {pillLabel(attempt.platform)} · {modeLabel(attempt.mode)} ·{" "}
                   {new Date(attempt.created_at).toLocaleString()}
@@ -115,6 +145,16 @@ export function HistoryPage() {
               </div>
               <div className="flex items-center gap-3">
                 <StatusPill>{attempt.status}</StatusPill>
+                {attempt.status === "needs_verification" ? (
+                  <button
+                    type="button"
+                    className="rounded-full border border-ink/10 px-4 py-2 text-sm font-semibold text-ink transition hover:bg-shell"
+                    onClick={() => continueMutation.mutate(attempt.id)}
+                    disabled={continueMutation.isPending}
+                  >
+                    打开小窗并继续
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="rounded-full border border-ink/10 px-4 py-2 text-sm font-semibold text-ink transition hover:bg-shell"

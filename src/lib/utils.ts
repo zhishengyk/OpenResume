@@ -18,7 +18,7 @@ export function modeLabel(mode: string) {
   }
 
   if (mode === "review_in_browser") {
-    return "浏览职位";
+    return "查看岗位";
   }
 
   return "仅推荐";
@@ -27,21 +27,24 @@ export function modeLabel(mode: string) {
 export function pillLabel(label: string) {
   const lowered = label.toLowerCase();
   const mapping: Record<string, string> = {
-    armed: "已就绪",
+    armed: "已启用",
     blocked: "已阻塞",
     ready: "已完成",
     running: "进行中",
     failed: "失败",
     queued: "排队中",
-    prepared: "已准备",
+    prepared: "已就绪",
     cancelled: "已取消",
     draft: "草稿",
-    demo: "演示模块",
-    liepin: "猎聘",
-    fresh: "新分析",
-    cached: "缓存",
+    official: "官网投递",
+    boss: "Boss 直聘",
+    fresh: "最新分析",
+    cached: "缓存分析",
+    heuristic: "规则降级",
+    openai_compatible: "大模型",
     "local api": "本地接口",
     "platform modules": "平台模块",
+    needs_verification: "等待验证",
   };
 
   return mapping[lowered] || label;
@@ -57,6 +60,7 @@ export function statusTone(status: string) {
       return "bg-ember/15 text-ember";
     case "running":
     case "queued":
+    case "needs_verification":
       return "bg-signal/20 text-ink";
     default:
       return "bg-ink/10 text-ink";

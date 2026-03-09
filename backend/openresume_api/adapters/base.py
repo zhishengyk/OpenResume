@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Any, Protocol
 
 from sqlmodel import Session
 
-from ..models import CandidateProfile
+from ..models import CandidateProfile, JobListing
 from ..schemas import PlatformCapabilityResponse, SearchSessionCreate
 
 
@@ -22,9 +22,22 @@ class NormalizedJobDraft:
     degree_text: str
     work_mode: str
     url: str
-    jd_text: str
-    jd_hash: str
-    raw_payload: dict
+    detail_url: str | None = None
+    apply_url: str | None = None
+    source_company_url: str | None = None
+    apply_requires_login: bool = False
+    jd_text: str = ""
+    jd_hash: str = ""
+    raw_payload: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class GuidedApplyOutcome:
+    status: str
+    message: str
+    verification_url: str | None = None
+    launch_url: str | None = None
+    context: dict[str, Any] = field(default_factory=dict)
 
 
 class PlatformBlockedError(RuntimeError):
@@ -61,4 +74,8 @@ class PlatformAdapter(Protocol):
 
     async def open_review(self, url: str) -> str: ...
 
-    async def guided_apply(self, url: str, profile: CandidateProfile) -> str: ...
+    async def guided_apply(
+        self,
+        job: JobListing,
+        profile: CandidateProfile,
+    ) -> GuidedApplyOutcome: ...

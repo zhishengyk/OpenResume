@@ -11,6 +11,18 @@ import { api } from "../lib/api";
 import { pillLabel } from "../lib/utils";
 import type { SearchEvent } from "../types";
 
+async function openVerificationPopup(url: string, title: string) {
+  if (window.openResumeDesktop?.openVerificationWindow) {
+    await window.openResumeDesktop.openVerificationWindow(url, title);
+    return;
+  }
+  if (window.openResumeDesktop?.openExternal) {
+    window.openResumeDesktop.openExternal(url);
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 export function ResultsPage() {
   const [params] = useSearchParams();
   const queryClient = useQueryClient();
@@ -36,7 +48,11 @@ export function ResultsPage() {
   });
 
   const openVerificationMutation = useMutation({
-    mutationFn: () => api.openSearchVerification(sessionId!),
+    mutationFn: async () => {
+      const payload = await api.openSearchVerification(sessionId!);
+      await openVerificationPopup(payload.url, payload.title);
+      return payload;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["search-session", sessionId] });
     },
@@ -55,20 +71,17 @@ export function ResultsPage() {
     setEvents((current) => {
       if (
         current.some(
-          (item) =>
-            item.type === event.type && item.timestamp === event.timestamp,
+          (item) => item.type === event.type && item.timestamp === event.timestamp,
         )
       ) {
         return current;
       }
-
       return [...current, event];
     });
     queryClient.invalidateQueries({ queryKey: ["search-session", sessionId] });
     queryClient.invalidateQueries({ queryKey: ["search-matches", sessionId] });
   });
 
-  const topMatch = matchesQuery.data?.[0];
   const isBlocked = sessionQuery.data?.status === "blocked";
   const isRunning = sessionQuery.data?.status === "running";
 
@@ -80,8 +93,8 @@ export function ResultsPage() {
             <p className="text-xs uppercase tracking-[0.24em] text-slate">
               搜索任务
             </p>
-            <h1 className="mt-3 font-display text-5xl italic text-ink">
-              先看流程，再决定要不要继续进入模块动作。
+            <h1 className="mt-3 font-display text-5xl text-ink">
+              先做代码清洗，再做模型精排，最后进入官网流程。
             </h1>
           </div>
           {sessionQuery.data ? <StatusPill>{sessionQuery.data.status}</StatusPill> : null}
@@ -93,23 +106,27 @@ export function ResultsPage() {
         ) : null}
       </section>
 
+      {sessionQuery.data?.analysis_degraded && sessionQuery.data.analysis_notice ? (
+        <section className="rounded-[32px] border border-amber-500/30 bg-amber-500/10 p-6 shadow-console">
+          <p className="text-sm leading-7 text-ink">
+            {sessionQuery.data.analysis_notice}
+          </p>
+        </section>
+      ) : null}
+
       {isBlocked ? (
         <section className="rounded-[32px] border border-ember/30 bg-ember/10 p-6 shadow-console">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-3xl">
               <p className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-ember">
                 <AlertTriangle size={16} />
-                命中人工验证
+                需要验证
               </p>
-              <h2 className="mt-3 font-display text-3xl italic text-ink">
-                先完成验证，再把这次任务继续跑完。
+              <h2 className="mt-3 font-display text-3xl text-ink">
+                先在小窗里完成验证，再继续当前搜索流程。
               </h2>
               <p className="mt-3 text-sm leading-7 text-slate">
-                {sessionQuery.data?.blocked_reason ||
-                  "系统已暂停当前搜索，避免在未验证状态下继续请求平台。"}
-              </p>
-              <p className="mt-3 text-sm leading-7 text-slate">
-                点击“重新打开验证页”后，先在浏览器里完成验证，再点击“验证后重试”。
+                {sessionQuery.data?.blocked_reason || "当前搜索因为平台要求人工验证而暂停。"}
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -120,9 +137,7 @@ export function ResultsPage() {
                 disabled={openVerificationMutation.isPending || !sessionId}
               >
                 <ShieldCheck size={16} />
-                {openVerificationMutation.isPending
-                  ? "正在打开验证页..."
-                  : "重新打开验证页"}
+                {openVerificationMutation.isPending ? "正在打开小窗..." : "打开验证小窗"}
               </button>
               <button
                 type="button"
@@ -131,7 +146,7 @@ export function ResultsPage() {
                 disabled={retrySearchMutation.isPending || !sessionId}
               >
                 <RefreshCw size={16} />
-                {retrySearchMutation.isPending ? "正在重试..." : "验证后重试"}
+                {retrySearchMutation.isPending ? "正在重试..." : "验证后继续"}
               </button>
             </div>
           </div>
@@ -140,19 +155,23 @@ export function ResultsPage() {
 
       <section className="grid gap-4 lg:grid-cols-3">
         <MetricCard
-          label="可见岗位数"
+          label="可见岗位"
           value={String(matchesQuery.data?.length ?? 0)}
-          hint="规则筛选会先出结果，模型说明再逐步补齐。"
+          hint="只有通过代码清洗的岗位才会进入结果列表。"
         />
         <MetricCard
-          label="当前平台"
-          value={sessionQuery.data ? pillLabel(sessionQuery.data.platform) : "--"}
-          hint="平台能力由模块声明，公共层只负责调度。"
+          label="搜索平台"
+          value={
+            sessionQuery.data?.requested_platforms
+              ?.map((platform) => pillLabel(platform))
+              .join("、") || "--"
+          }
+          hint="搜索任务会记录本次勾选的所有平台。"
         />
         <MetricCard
-          label="最高分"
-          value={topMatch ? String(Math.round(topMatch.final_score)) : "--"}
-          hint="最终分数由规则过滤和模型分析共同构成。"
+          label="分析来源"
+          value={sessionQuery.data ? pillLabel(sessionQuery.data.analysis_provider) : "--"}
+          hint="如果降级到规则模式，这里会明确提示。"
         />
       </section>
 
@@ -165,9 +184,7 @@ export function ResultsPage() {
             ))
           ) : (
             <div className="rounded-[32px] border border-ink/10 bg-shell/90 p-8 text-sm leading-7 text-slate shadow-console">
-              {isRunning
-                ? "规则筛选完成后，岗位卡片会先出现在这里；随后模型解释会继续补进详情。"
-                : "当前还没有可展示的岗位卡片。若任务进入 blocked，请先完成验证后再重试。"}
+              {isRunning ? "代码清洗完成后，岗位会显示在这里。" : "当前任务还没有可展示的岗位。"}
             </div>
           )}
         </div>
