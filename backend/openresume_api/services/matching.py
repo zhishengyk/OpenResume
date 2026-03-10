@@ -1,14 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 from ..adapters.base import NormalizedJobDraft
-from ..adapters.official_extractors.common import (
-    candidate_quality_penalty,
-    matches_requested_targets,
-    normalize_city,
-    unrelated_role_reasons,
-)
+from ..career_collectors.normalization import normalize_city
 from ..models import CandidateProfile
 
 
@@ -22,11 +18,17 @@ class RuleMatch:
 
 
 class MatchingService:
-    def _city_matches(self, draft_city: str, requested_cities: set[str]) -> bool:
+    def _city_matches(self, location_city: str, requested_cities: set[str]) -> bool:
         if not requested_cities:
             return True
-        normalized_draft = normalize_city(draft_city)
-        return normalized_draft in requested_cities
+        normalized = normalize_city(location_city)
+        return normalized in requested_cities
+
+    def _target_matches(self, text: str, targets: list[str]) -> bool:
+        if not targets:
+            return True
+        lowered = text.lower()
+        return any(target.lower() in lowered for target in targets)
 
     def filter_and_score(
         self,
@@ -51,81 +53,70 @@ class MatchingService:
         profile_skills = {skill.lower(): skill for skill in profile.skills}
 
         for draft in drafts:
-            quality = draft.raw_payload.get("quality") or {}
-            quality_score = int(quality.get("score") or 100)
-            if quality_score < 60:
-                continue
-            if not self._city_matches(draft.city, cities):
+            combined_text = "\n".join(
+                [draft.title, draft.description_text, draft.requirements_text]
+            )
+            lowered = combined_text.lower()
+
+            if not self._city_matches(draft.location_city or draft.location_raw, cities):
                 continue
             if salary_floor and draft.salary_min and draft.salary_min < salary_floor:
                 continue
-            combined_text = f"{draft.title} {draft.jd_text}"
-            if targets and not matches_requested_targets(combined_text, requested_targets or profile.target_roles):
-                continue
-            role_reasons = unrelated_role_reasons(
-                draft.title,
-                draft.jd_text[:400],
-                requested_targets or profile.target_roles,
-            )
-            if role_reasons:
+            if not self._target_matches(
+                combined_text, requested_targets or profile.target_roles
+            ):
                 continue
 
             matched_keywords = [
                 original
-                for lowered, original in profile_skills.items()
-                if lowered in draft.jd_text.lower()
+                for lowered_skill, original in profile_skills.items()
+                if lowered_skill in lowered
             ]
             missing_keywords = [
                 keyword
                 for keyword in requested_keywords or profile.must_have_keywords
-                if keyword.lower() not in draft.jd_text.lower()
+                if keyword.lower() not in lowered
             ]
-
             if must_have and len(missing_keywords) >= len(must_have):
                 continue
 
             skill_component = min(35.0, len(matched_keywords) * 7.0)
-            role_component = (
-                25.0 if any(target in draft.title.lower() for target in targets) else 12.0
+            role_component = 25.0 if any(target in lowered for target in targets) else 10.0
+            salary_component = (
+                10.0 if draft.salary_min and draft.salary_min >= salary_floor else 5.0
             )
-            level_component = (
-                15.0
-                if any(keyword in draft.title for keyword in ["\u9ad8\u7ea7", "\u8d44\u6df1"])
-                else 9.0
+            location_component = (
+                8.0
+                if self._city_matches(draft.location_city or draft.location_raw, cities)
+                else 2.0
             )
-            domain_component = (
-                10.0
-                if any(keyword in draft.jd_text for keyword in ["AI", "\u4e2d\u540e\u53f0"])
-                else 5.0
-            )
-            salary_component = 10.0 if draft.salary_min >= salary_floor else 5.0
-            location_component = 5.0 if self._city_matches(draft.city, cities) else 2.0
+            freshness_component = 12.0 if draft.posted_at else 6.0
+            requirement_component = 10.0 if draft.requirements_text else 5.0
             score = (
                 skill_component
                 + role_component
-                + level_component
-                + domain_component
                 + salary_component
                 + location_component
+                + freshness_component
+                + requirement_component
             )
-            score -= candidate_quality_penalty(draft.raw_payload)
-            score = max(score, 0.0)
 
             risk_flags: list[str] = []
-            if draft.work_mode.lower() == "onsite":
-                risk_flags.append("\u9700\u8981\u5750\u73ed")
-            if "leader" in draft.jd_text.lower() or "\u5e26\u56e2\u961f" in draft.jd_text:
-                risk_flags.append("\u8981\u6c42\u5e26\u56e2\u961f")
-            if "\u0033-\u0035\u5e74" in draft.experience_text and profile.years_experience < 3:
-                risk_flags.append("\u5e74\u9650\u53ef\u80fd\u4e0d\u8db3")
-            quality_penalty = candidate_quality_penalty(draft.raw_payload)
-            if quality_penalty:
-                risk_flags.append("官网信息质量一般")
+            if draft.remote_type.lower() == "onsite":
+                risk_flags.append("需要现场办公")
+            if "leader" in lowered or "team lead" in lowered:
+                risk_flags.append("可能包含管理职责")
+            if profile.years_experience < 3 and re.search(
+                r"(3-5\s*years|3\+\s*years|\u4e09\u5e74\u4ee5\u4e0a|\d+\s*-\s*\d+\s*\u5e74)",
+                combined_text,
+                re.IGNORECASE,
+            ):
+                risk_flags.append("经验要求可能偏高")
 
             matches.append(
                 RuleMatch(
                     draft=draft,
-                    rule_score=score,
+                    rule_score=max(score, 0.0),
                     highlights=matched_keywords[:5],
                     missing_keywords=missing_keywords[:4],
                     risk_flags=risk_flags,

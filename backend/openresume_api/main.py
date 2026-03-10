@@ -47,7 +47,7 @@ from .services.search import search_service
 SessionDep = Annotated[Session, Depends(get_session)]
 
 RECOMMENDED_ACCOUNT_NOTICE = (
-    "Use the in-app verification window for login and captcha challenges on official sites."
+    "如遇官网登录或验证码，请优先使用应用内验证窗口完成。"
 )
 
 
@@ -115,24 +115,30 @@ def platform_session_response(platform: str, state: dict) -> PlatformSessionResp
 def match_response(match: JobMatch, job: JobListing) -> JobMatchResponse:
     return JobMatchResponse(
         id=match.id,
-        job_id=job.id,
+        listing_id=job.id,
         platform=job.platform,
-        external_job_id=job.external_job_id,
+        job_id=job.job_id,
+        source_company=job.source_company,
+        source_site=job.source_site,
         title=job.title,
-        company_name=job.company_name,
-        city=job.city,
-        salary_text=job.salary_text,
-        experience_text=job.experience_text,
-        degree_text=job.degree_text,
-        work_mode=job.work_mode,
-        url=job.url,
-        detail_url=job.detail_url,
+        department=job.department,
+        employment_type=job.employment_type,
+        location_raw=job.location_raw,
+        location_city=job.location_city,
+        location_country=job.location_country,
+        remote_type=job.remote_type,
+        description_html=job.description_html,
+        description_text=job.description_text,
+        requirements_text=job.requirements_text,
+        skills_extracted=job.skills_extracted,
+        posted_at=job.posted_at,
         apply_url=job.apply_url,
-        source_company_url=job.source_company_url,
-        apply_requires_login=job.apply_requires_login,
+        salary_raw=job.salary_raw,
+        salary_min=job.salary_min,
+        salary_max=job.salary_max,
+        lang=job.lang,
+        crawl_time=job.crawl_time,
         apply_supported=bool(job.apply_url),
-        jd_text=job.jd_text,
-        jd_excerpt=job.jd_text[:240],
         rule_score=match.rule_score,
         llm_score=match.llm_score,
         final_score=match.final_score,
@@ -150,7 +156,7 @@ def match_response(match: JobMatch, job: JobListing) -> JobMatchResponse:
 def attempt_response(attempt: ApplicationAttempt) -> ApplicationAttemptResponse:
     return ApplicationAttemptResponse(
         id=attempt.id,
-        job_id=attempt.job_id,
+        listing_id=attempt.job_id,
         platform=attempt.platform,
         mode=attempt.mode,
         status=attempt.status,
@@ -172,12 +178,12 @@ async def ensure_platform_search_ready(platform: str, db: SessionDep) -> None:
     if not state.get("active"):
         raise HTTPException(
             status_code=409,
-            detail=f"{platform} requires an active session before searching.",
+            detail=f"{platform} 需要先准备好可用会话后才能搜索。",
         )
     if not state.get("search_ready"):
         raise HTTPException(
             status_code=409,
-            detail=f"{platform} session is not ready yet.",
+            detail=f"{platform} 会话尚未准备完成。",
         )
 
 
@@ -202,7 +208,7 @@ def runtime_config_response() -> RuntimeConfigResponse:
         ),
         openai_base_url=llm_config.openai_base_url,
         openai_model=llm_config.openai_model,
-        official_source_file=str(settings.official_source_file),
+        official_sources_summary="代码清单：字节跳动社招 + 校招",
     )
 
 
@@ -235,14 +241,14 @@ async def list_runtime_models(payload: LLMRuntimeProbeRequest) -> LLMModelListRe
     if config.llm_provider != "openai_compatible":
         raise HTTPException(
             status_code=400,
-            detail="Only OpenAI-compatible provider supports model listing.",
+            detail="只有 OpenAI 兼容提供方支持拉取模型列表。",
         )
 
     llm_state = runtime_config_service.llm_runtime_state(config, require_model=False)
     if llm_state.missing_fields:
         raise HTTPException(
             status_code=400,
-            detail=f"Missing required configuration: {', '.join(llm_state.missing_fields)}",
+            detail=f"缺少必要配置：{', '.join(llm_state.missing_fields)}",
         )
 
     try:
@@ -271,14 +277,14 @@ async def test_runtime_llm(
     if config.llm_provider != "openai_compatible":
         raise HTTPException(
             status_code=400,
-            detail="Only OpenAI-compatible provider supports connection testing.",
+            detail="只有 OpenAI 兼容提供方支持测试连接。",
         )
 
     llm_state = runtime_config_service.llm_runtime_state(config)
     if llm_state.missing_fields:
         raise HTTPException(
             status_code=400,
-            detail=f"Missing required configuration: {', '.join(llm_state.missing_fields)}",
+            detail=f"缺少必要配置：{', '.join(llm_state.missing_fields)}",
         )
 
     try:
@@ -343,7 +349,7 @@ async def start_platform_session(platform: str, db: SessionDep):
     adapter = platform_gateway.get(platform)
     capability = adapter.capability()
     if not capability.session_supported:
-        raise HTTPException(status_code=409, detail=f"{platform} does not use a dedicated session.")
+        raise HTTPException(status_code=409, detail=f"{platform} 不使用独立会话。")
     await adapter.start_session(db)
     return platform_session_response(platform, await adapter.session_state(db))
 
@@ -353,7 +359,7 @@ async def get_platform_session(platform: str, db: SessionDep):
     adapter = platform_gateway.get(platform)
     capability = adapter.capability()
     if not capability.session_supported:
-        raise HTTPException(status_code=409, detail=f"{platform} does not use a dedicated session.")
+        raise HTTPException(status_code=409, detail=f"{platform} 不使用独立会话。")
     return platform_session_response(platform, await adapter.session_state(db))
 
 
@@ -365,7 +371,7 @@ async def check_platform_session_ready(platform: str, db: SessionDep):
     adapter = platform_gateway.get(platform)
     capability = adapter.capability()
     if not capability.session_supported:
-        raise HTTPException(status_code=409, detail=f"{platform} does not use a dedicated session.")
+        raise HTTPException(status_code=409, detail=f"{platform} 不使用独立会话。")
     return platform_session_response(platform, await adapter.session_state(db))
 
 
@@ -378,26 +384,29 @@ def get_risk_status(platform: str, db: SessionDep):
 async def create_search_session(payload: SearchSessionCreate, db: SessionDep):
     platforms = list(dict.fromkeys(payload.platforms))
     if not platforms:
-        raise HTTPException(status_code=400, detail="Select at least one platform.")
+        raise HTTPException(status_code=400, detail="请至少选择一个平台。")
 
     adapters = platform_gateway.resolve(platforms)
     for adapter in adapters:
         capability = adapter.capability()
         if not capability.selectable:
-            raise HTTPException(status_code=409, detail=capability.disabled_reason or f"{adapter.platform} is disabled.")
+            raise HTTPException(
+                status_code=409,
+                detail=capability.disabled_reason or f"{adapter.platform} 当前不可用。",
+            )
         if not capability.search_supported:
-            raise HTTPException(status_code=409, detail=f"{adapter.platform} does not support search.")
+            raise HTTPException(status_code=409, detail=f"{adapter.platform} 不支持搜索。")
         if payload.mode == "review_in_browser" and not capability.review_open_supported:
-            raise HTTPException(status_code=409, detail=f"{adapter.platform} does not support browser review.")
+            raise HTTPException(status_code=409, detail=f"{adapter.platform} 不支持打开职位页面查看。")
         if payload.mode == "guided_apply" and not capability.guided_apply_supported:
-            raise HTTPException(status_code=409, detail=f"{adapter.platform} does not support guided apply.")
+            raise HTTPException(status_code=409, detail=f"{adapter.platform} 不支持引导投递。")
         if (
             payload.mode == "guided_apply"
             and not compliance_service.has_guided_apply_consent(db, adapter.platform)
         ):
             raise HTTPException(
                 status_code=403,
-                detail=f"Guided apply consent is required for {adapter.platform}.",
+                detail=f"{adapter.platform} 需要先同意引导投递提示后才能继续。",
             )
         await ensure_platform_search_ready(adapter.platform, db)
 
@@ -421,7 +430,7 @@ def list_search_sessions(db: SessionDep):
 def get_search_session(session_id: str, db: SessionDep):
     session = db.get(SearchSession, session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Search session not found.")
+        raise HTTPException(status_code=404, detail="未找到搜索任务。")
     return session
 
 
@@ -469,12 +478,12 @@ async def stream_search_events(session_id: str):
 async def open_review(job_id: str, db: SessionDep):
     job = db.get(JobListing, job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found.")
+        raise HTTPException(status_code=404, detail="未找到职位。")
     adapter = platform_gateway.get(job.platform)
     capability = adapter.capability()
     if not capability.review_open_supported:
-        raise HTTPException(status_code=409, detail=f"{job.platform} does not support review.")
-    message = await adapter.open_review(job.detail_url or job.url)
+        raise HTTPException(status_code=409, detail=f"{job.platform} 不支持打开职位页面查看。")
+    message = await adapter.open_review(job.apply_url)
     return {"message": message}
 
 
@@ -482,25 +491,25 @@ async def open_review(job_id: str, db: SessionDep):
 async def guided_apply(job_id: str, db: SessionDep):
     job = db.get(JobListing, job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found.")
+        raise HTTPException(status_code=404, detail="未找到职位。")
     adapter = platform_gateway.get(job.platform)
     capability = adapter.capability()
     if not capability.guided_apply_supported:
-        raise HTTPException(status_code=409, detail=f"{job.platform} does not support guided apply.")
+        raise HTTPException(status_code=409, detail=f"{job.platform} 不支持引导投递。")
     if not compliance_service.has_guided_apply_consent(db, job.platform):
-        raise HTTPException(status_code=403, detail=f"Guided apply consent is required for {job.platform}.")
+        raise HTTPException(status_code=403, detail=f"{job.platform} 需要先同意引导投递提示后才能继续。")
 
     risk_control_service.ensure_guided_apply_allowed(db, job.platform)
     profile = profile_service.load_or_create(db)
     if not profile.source_filename:
-        raise HTTPException(status_code=409, detail="Upload a resume before starting guided apply.")
+        raise HTTPException(status_code=409, detail="开始引导投递前请先上传简历。")
 
     attempt = ApplicationAttempt(
         job_id=job.id,
         platform=job.platform,
         mode="guided_apply",
         status="running",
-        message="Preparing official guided apply flow.",
+        message="正在准备官网引导投递流程。",
     )
     db.add(attempt)
     db.commit()
@@ -540,7 +549,7 @@ def list_application_attempts(db: SessionDep):
 def get_application_attempt(attempt_id: str, db: SessionDep):
     attempt = db.get(ApplicationAttempt, attempt_id)
     if not attempt:
-        raise HTTPException(status_code=404, detail="Application attempt not found.")
+        raise HTTPException(status_code=404, detail="未找到投递记录。")
     return attempt_response(attempt)
 
 
@@ -551,16 +560,16 @@ def get_application_attempt(attempt_id: str, db: SessionDep):
 def open_application_attempt_verification(attempt_id: str, db: SessionDep):
     attempt = db.get(ApplicationAttempt, attempt_id)
     if not attempt:
-        raise HTTPException(status_code=404, detail="Application attempt not found.")
+        raise HTTPException(status_code=404, detail="未找到投递记录。")
     if not attempt.verification_url:
-        raise HTTPException(status_code=409, detail="This attempt does not require verification.")
+        raise HTTPException(status_code=409, detail="当前投递不需要验证。")
     attempt.updated_at = datetime.utcnow()
     db.add(attempt)
     db.commit()
     return VerificationWindowResponse(
         url=attempt.verification_url,
-        title=f"{attempt.platform} verification",
-        message="Complete any login or captcha steps in the in-app popup, then continue the attempt.",
+        title=f"{attempt.platform} 验证",
+        message="请在应用内弹窗完成官网登录或验证码，然后继续投递。",
     )
 
 
@@ -571,13 +580,13 @@ def open_application_attempt_verification(attempt_id: str, db: SessionDep):
 def continue_application_attempt(attempt_id: str, db: SessionDep):
     attempt = db.get(ApplicationAttempt, attempt_id)
     if not attempt:
-        raise HTTPException(status_code=404, detail="Application attempt not found.")
+        raise HTTPException(status_code=404, detail="未找到投递记录。")
     if attempt.status != "needs_verification":
-        raise HTTPException(status_code=409, detail="This attempt is not waiting for verification.")
+        raise HTTPException(status_code=409, detail="当前投递不处于等待验证状态。")
 
     attempt.status = "prepared"
     attempt.message = (
-        "Verification window closed. Official apply flow can continue from the prepared state."
+        "验证窗口已关闭，官网投递流程可以继续。"
     )
     attempt.updated_at = datetime.utcnow()
     db.add(attempt)
@@ -590,10 +599,10 @@ def continue_application_attempt(attempt_id: str, db: SessionDep):
 def cancel_application_attempt(attempt_id: str, db: SessionDep):
     attempt = db.get(ApplicationAttempt, attempt_id)
     if not attempt:
-        raise HTTPException(status_code=404, detail="Application attempt not found.")
+        raise HTTPException(status_code=404, detail="未找到投递记录。")
     attempt.status = "cancelled"
     attempt.updated_at = datetime.utcnow()
-    attempt.message = "Cancelled by user."
+    attempt.message = "已由用户取消。"
     db.add(attempt)
     db.commit()
     db.refresh(attempt)

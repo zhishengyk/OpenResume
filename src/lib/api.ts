@@ -21,13 +21,15 @@ declare global {
     openResumeDesktop?: {
       apiBaseUrl?: string;
       openExternal?: (url: string) => Promise<unknown>;
-      openVerificationWindow?: (url: string, title?: string) => Promise<{ closed: boolean }>;
+      openVerificationWindow?: (
+        url: string,
+        title?: string,
+      ) => Promise<{ closed: boolean }>;
     };
   }
 }
 
-const API_BASE =
-  window.openResumeDesktop?.apiBaseUrl || "http://127.0.0.1:38417";
+const API_BASE = window.openResumeDesktop?.apiBaseUrl || "http://127.0.0.1:38417";
 
 function extractErrorMessage(detail: string): string {
   if (!detail) {
@@ -53,11 +55,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     response = await fetch(`${API_BASE}${path}`, init);
   } catch (error) {
     const message =
-      error instanceof Error && error.message
-        ? error.message
-        : "未知网络错误";
+      error instanceof Error && error.message ? error.message : "未知网络错误";
     throw new Error(
-      `本地接口不可用，请确认 OpenResume 后端正在运行。原始错误：${message}`,
+      `本地 API 不可用，请确认 OpenResume 后端已经启动。根因：${message}`,
     );
   }
 
@@ -158,8 +158,7 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   listSearchSessions: () => request<SearchSession[]>("/api/search-sessions"),
-  getSearchSession: (id: string) =>
-    request<SearchSession>(`/api/search-sessions/${id}`),
+  getSearchSession: (id: string) => request<SearchSession>(`/api/search-sessions/${id}`),
   retrySearchSession: (id: string) =>
     request<SearchSession>(`/api/search-sessions/${id}/retry`, {
       method: "POST",
@@ -170,16 +169,15 @@ export const api = {
     }),
   getSearchMatches: (id: string) =>
     request<JobMatch[]>(`/api/search-sessions/${id}/matches`),
-  openReview: (jobId: string) =>
-    request<{ message: string }>(`/api/jobs/${jobId}/open-review`, {
+  openReview: (listingId: string) =>
+    request<{ message: string }>(`/api/jobs/${listingId}/open-review`, {
       method: "POST",
     }),
-  guidedApply: (jobId: string) =>
-    request<ApplicationAttempt>(`/api/jobs/${jobId}/guided-apply`, {
+  guidedApply: (listingId: string) =>
+    request<ApplicationAttempt>(`/api/jobs/${listingId}/guided-apply`, {
       method: "POST",
     }),
-  listAttempts: () =>
-    request<ApplicationAttempt[]>("/api/application-attempts"),
+  listAttempts: () => request<ApplicationAttempt[]>("/api/application-attempts"),
   getAttempt: (attemptId: string) =>
     request<ApplicationAttempt>(`/api/application-attempts/${attemptId}`),
   openAttemptVerificationWindow: (attemptId: string) =>
@@ -188,17 +186,13 @@ export const api = {
       { method: "POST" },
     ),
   continueAttempt: (attemptId: string) =>
-    request<ApplicationAttempt>(
-      `/api/application-attempts/${attemptId}/continue`,
-      { method: "POST" },
-    ),
+    request<ApplicationAttempt>(`/api/application-attempts/${attemptId}/continue`, {
+      method: "POST",
+    }),
   cancelAttempt: (attemptId: string) =>
-    request<ApplicationAttempt>(
-      `/api/application-attempts/${attemptId}/cancel`,
-      {
-        method: "POST",
-      },
-    ),
+    request<ApplicationAttempt>(`/api/application-attempts/${attemptId}/cancel`, {
+      method: "POST",
+    }),
   setEmergencyStop: (active: boolean) =>
     request<{ active: boolean }>("/api/emergency-stop", {
       method: "POST",

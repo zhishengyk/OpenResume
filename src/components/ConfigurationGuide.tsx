@@ -9,12 +9,12 @@ interface ConfigurationGuideProps {
 }
 
 const desktopStartCommand = [
-  "cd C:\\Users\\admin\\Desktop\\openresume",
+  "cd C:\\Users\\admin\\Desktop\\OpenResume",
   "npm run dev",
 ].join("\n");
 
 const backendOnlyCommand = [
-  "cd C:\\Users\\admin\\Desktop\\openresume\\backend",
+  "cd C:\\Users\\admin\\Desktop\\OpenResume\\backend",
   "python -m openresume_api",
 ].join("\n");
 
@@ -60,29 +60,27 @@ export function ConfigurationGuide({
               <Server size={24} />
             </div>
             <div className="flex-1">
-              <p className="text-xs uppercase tracking-[0.24em] text-ember">
-                本地接口未连接
-              </p>
+              <p className="text-xs uppercase tracking-[0.24em] text-ember">本地 API 不可用</p>
               <h2 className="mt-2 font-display text-4xl text-ink">
-                先把桌面应用或后端接口启动起来，再刷新前端。
+                先启动桌面应用或后端 API，再刷新当前界面。
               </h2>
               <p className="mt-4 text-sm leading-7 text-slate">
-                当前前端无法访问 <span className="font-semibold text-ink">{apiBaseUrl}</span>，
-                所以页面里的资料、平台和搜索接口都不会返回数据。
+                前端当前无法访问 <span className="font-semibold text-ink">{apiBaseUrl}</span>，
+                所以候选人画像、平台信息和搜索请求都会失败。
               </p>
 
               <div className="mt-5 grid gap-4 lg:grid-cols-2">
                 <div className="rounded-[24px] border border-ink/10 bg-shell/80 p-4">
                   <p className="flex items-center gap-2 text-sm font-semibold text-ink">
                     <TerminalSquare size={16} />
-                    启动整套桌面应用
+                    启动桌面应用
                   </p>
                   <CodeBlock>{desktopStartCommand}</CodeBlock>
                 </div>
                 <div className="rounded-[24px] border border-ink/10 bg-shell/80 p-4">
                   <p className="flex items-center gap-2 text-sm font-semibold text-ink">
                     <TerminalSquare size={16} />
-                    只启动后端接口
+                    仅启动后端
                   </p>
                   <CodeBlock>{backendOnlyCommand}</CodeBlock>
                 </div>
@@ -90,18 +88,15 @@ export function ConfigurationGuide({
 
               <div className="mt-5 rounded-[24px] border border-ink/10 bg-shell/80 p-4 text-sm leading-7 text-slate">
                 <p>
-                  健康检查地址：
-                  <span className="font-semibold text-ink"> {healthUrl}</span>
+                  健康检查地址：<span className="font-semibold text-ink">{healthUrl}</span>
                 </p>
                 <p className="mt-2">
-                  能看到 <span className="font-semibold text-ink">{"{\"status\":\"ok\"}"}</span>
-                  就说明后端已经起来了。
+                  正常后端会返回 <span className="font-semibold text-ink">{"{\"status\":\"ok\"}"}</span>。
                 </p>
                 {!runningInDesktopShell ? (
                   <p className="mt-2">
-                    你当前看起来是在普通浏览器里打开前端。开发模式建议直接运行
-                    <span className="font-semibold text-ink"> npm run dev</span>，
-                    这样 Electron、前端和本地后端会一起拉起。
+                    开发时优先使用 <span className="font-semibold text-ink">npm run dev</span>，
+                    这样 Electron、前端和本地后端会一起启动。
                   </p>
                 ) : null}
               </div>
@@ -113,12 +108,12 @@ export function ConfigurationGuide({
                   onClick={onRetry}
                 >
                   <RefreshCw size={16} />
-                  重新检测
+                  重试
                 </button>
               </div>
 
               <p className="mt-4 rounded-[24px] border border-ember/20 bg-paper px-4 py-3 text-sm leading-7 text-ink">
-                原始错误：{apiUnavailableMessage}
+                根因：{apiUnavailableMessage}
               </p>
             </div>
           </div>
@@ -132,71 +127,56 @@ export function ConfigurationGuide({
               <Bot size={24} />
             </div>
             <div className="flex-1">
-              <p className="text-xs uppercase tracking-[0.24em] text-amber-700">
-                模型配置引导
-              </p>
+              <p className="text-xs uppercase tracking-[0.24em] text-amber-700">模型配置</p>
               <h2 className="mt-2 font-display text-4xl text-ink">
-                当前还没有用上真实大模型，岗位会先走规则降级。
+                当前排序仍在启发式回退模式下运行。
               </h2>
-              <p className="mt-4 text-sm leading-7 text-slate">
-                {runtimeConfig?.llm_notice}
-              </p>
-              <p className="mt-2 text-sm leading-7 text-slate">
-                你可以直接在下方“模型配置”里保存、拉取模型列表并测试连接；如果仍然偏好环境变量方式，也可以继续用命令行配置。
-              </p>
-
+              <p className="mt-4 text-sm leading-7 text-slate">{runtimeConfig?.llm_notice}</p>
               {runtimeConfig?.llm_missing_envs.length ? (
                 <p className="mt-4 text-sm leading-7 text-slate">
-                  缺少配置项：
+                  缺失字段：
                   <span className="font-semibold text-ink">
-                    {" "}{runtimeConfig.llm_missing_envs.join("、")}
+                    {" "}
+                    {runtimeConfig.llm_missing_envs.join(", ")}
                   </span>
                 </p>
               ) : null}
 
               <div className="mt-5 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
                 <div className="rounded-[24px] border border-ink/10 bg-shell/80 p-4">
-                  <p className="text-sm font-semibold text-ink">
-                    PowerShell 示例
-                  </p>
+                  <p className="text-sm font-semibold text-ink">PowerShell 示例</p>
                   <CodeBlock>{modelConfigExample}</CodeBlock>
                 </div>
                 <div className="rounded-[24px] border border-ink/10 bg-shell/80 p-4 text-sm leading-7 text-slate">
                   <p>
-                    当前请求配置：
+                    已配置提供方：
                     <span className="font-semibold text-ink"> {runtimeConfig?.llm_provider}</span>
                   </p>
                   <p className="mt-2">
-                    当前生效排序：
+                    实际生效提供方：
                     <span className="font-semibold text-ink">
-                      {" "}{runtimeConfig?.llm_effective_provider}
+                      {" "}
+                      {runtimeConfig?.llm_effective_provider}
                     </span>
                   </p>
                   <p className="mt-2">
-                    官网源文件：
+                    当前官网来源：
                     <span className="font-semibold text-ink">
-                      {" "}{runtimeConfig?.official_source_file}
+                      {" "}
+                      {runtimeConfig?.official_sources_summary}
                     </span>
                   </p>
                   {runtimeConfig?.openai_base_url ? (
                     <p className="mt-2">
-                      当前模型地址：
-                      <span className="font-semibold text-ink">
-                        {" "}{runtimeConfig.openai_base_url}
-                      </span>
+                      Base URL：
+                      <span className="font-semibold text-ink"> {runtimeConfig.openai_base_url}</span>
                     </p>
                   ) : null}
                   {runtimeConfig?.openai_model ? (
                     <p className="mt-2">
-                      当前模型名：
-                      <span className="font-semibold text-ink">
-                        {" "}{runtimeConfig.openai_model}
-                      </span>
+                      模型：<span className="font-semibold text-ink">{runtimeConfig.openai_model}</span>
                     </p>
                   ) : null}
-                  <p className="mt-2">
-                    如果你改的是环境变量，需要重新启动应用；如果你改的是下方表单，保存后会立即写入本地运行时配置。
-                  </p>
                 </div>
               </div>
             </div>
@@ -213,16 +193,12 @@ export function ConfigurationGuide({
               <Bot size={24} />
             </div>
             <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-slate">
-                模型状态
-              </p>
-              <h2 className="mt-2 font-display text-4xl text-ink">
-                大模型排序已启用
-              </h2>
+              <p className="text-xs uppercase tracking-[0.24em] text-slate">模型状态</p>
+              <h2 className="mt-2 font-display text-4xl text-ink">大模型排序已启用</h2>
               <p className="mt-4 text-sm leading-7 text-slate">
-                当前模型：{runtimeConfig.openai_model || "未命名"}，接口地址：
-                {runtimeConfig.openai_base_url || "未显示"}。官网源文件使用
-                {runtimeConfig.official_source_file}。
+                当前模型：{runtimeConfig.openai_model || "未设置"}，Base URL：
+                {runtimeConfig.openai_base_url || "未设置"}。当前官网来源：
+                {runtimeConfig.official_sources_summary}。
               </p>
             </div>
           </div>

@@ -110,9 +110,7 @@ export function SetupPage() {
     <div className="space-y-6">
       <header className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
         <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
-          <p className="text-xs uppercase tracking-[0.24em] text-slate">
-            候选人画像
-          </p>
+          <p className="text-xs uppercase tracking-[0.24em] text-slate">候选人画像</p>
           <h1 className="mt-3 font-display text-5xl text-ink">
             简历数据只保存在本地，并提供给各个平台模块复用。
           </h1>
@@ -127,9 +125,7 @@ export function SetupPage() {
               <Layers3 size={20} />
             </div>
             <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-ember">
-                模块边界
-              </p>
+              <p className="text-xs uppercase tracking-[0.24em] text-ember">模块边界</p>
               <p className="mt-3 font-display text-4xl text-ink">
                 每个平台都保持独立模块
               </p>
@@ -143,9 +139,7 @@ export function SetupPage() {
 
       <section className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
         <div className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
-          <p className="text-xs uppercase tracking-[0.24em] text-slate">
-            简历导入
-          </p>
+          <p className="text-xs uppercase tracking-[0.24em] text-slate">简历导入</p>
           <label className="mt-5 flex cursor-pointer flex-col items-center justify-center rounded-[28px] border border-dashed border-ink/20 bg-paper px-6 py-12 text-center transition hover:border-ink/40">
             <UploadCloud size={34} className="text-ink" />
             <p className="mt-4 font-medium text-ink">上传 PDF 或 DOCX 简历</p>
@@ -170,9 +164,7 @@ export function SetupPage() {
           ) : null}
 
           <div className="mt-6 rounded-[24px] border border-ink/10 bg-paper p-4">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate">
-              已注册平台模块
-            </p>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate">已注册平台模块</p>
             <div className="mt-3 space-y-3">
               {platformsQuery.data?.map((platform) => (
                 <div
@@ -190,8 +182,8 @@ export function SetupPage() {
                     </p>
                   </div>
                   <p className="mt-2 text-sm text-slate">
-                    搜索：{platform.search_supported ? "已启用" : "未启用"} · 查看：
-                    {platform.review_open_supported ? "已启用" : "未启用"} · 引导投递：
+                    搜索：{platform.search_supported ? "已启用" : "未启用"} | 查看：
+                    {platform.review_open_supported ? "已启用" : "未启用"} | 引导投递：
                     {platform.guided_apply_supported ? "已启用" : "未启用"}
                   </p>
                   <p className="mt-1 text-sm text-slate">

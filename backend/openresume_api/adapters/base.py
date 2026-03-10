@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Protocol
 
 from sqlmodel import Session
@@ -11,23 +12,27 @@ from ..schemas import PlatformCapabilityResponse, SearchSessionCreate
 
 @dataclass
 class NormalizedJobDraft:
-    external_job_id: str
+    source_company: str
+    source_site: str
+    job_id: str
     title: str
-    company_name: str
-    city: str
-    salary_text: str
-    salary_min: int
-    salary_max: int
-    experience_text: str
-    degree_text: str
-    work_mode: str
-    url: str
-    detail_url: str | None = None
-    apply_url: str | None = None
-    source_company_url: str | None = None
-    apply_requires_login: bool = False
-    jd_text: str = ""
-    jd_hash: str = ""
+    department: str = ""
+    employment_type: str = ""
+    location_raw: str = ""
+    location_city: str = ""
+    location_country: str = ""
+    remote_type: str = "unknown"
+    description_html: str = ""
+    description_text: str = ""
+    requirements_text: str = ""
+    skills_extracted: list[str] = field(default_factory=list)
+    posted_at: datetime | None = None
+    apply_url: str = ""
+    salary_raw: str = ""
+    salary_min: int | None = None
+    salary_max: int | None = None
+    lang: str = "zh-CN"
+    crawl_time: datetime | None = None
     raw_payload: dict[str, Any] = field(default_factory=dict)
 
 

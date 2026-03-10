@@ -1,4 +1,5 @@
 import time
+from datetime import datetime
 
 from openresume_api.adapters.base import NormalizedJobDraft, PlatformBlockedError
 from openresume_api.adapters.official import official_adapter
@@ -62,23 +63,27 @@ def create_search_session(
 
 def sample_draft() -> NormalizedJobDraft:
     return NormalizedJobDraft(
-        external_job_id="official-live-001",
+        source_company="ByteDance",
+        source_site="jobs.bytedance.com",
+        job_id="official-live-001",
         title="Senior Frontend Engineer",
-        company_name="Example Corp",
-        city="Shanghai",
-        salary_text="25K-35K",
+        department="Engineering",
+        employment_type="Experienced",
+        location_raw="Shanghai",
+        location_city="Shanghai",
+        location_country="China",
+        remote_type="onsite",
+        description_html="<p>React TypeScript Electron FastAPI official site flow</p>",
+        description_text="React TypeScript Electron FastAPI official site flow",
+        requirements_text="React TypeScript",
+        skills_extracted=[],
+        posted_at=datetime(2026, 3, 1),
+        apply_url="https://jobs.bytedance.com/experienced/position/official-live-001/detail",
+        salary_raw="25K-35K",
         salary_min=25000,
         salary_max=35000,
-        experience_text="3-5 years",
-        degree_text="Bachelor",
-        work_mode="onsite",
-        url="https://example.com/jobs/official-live-001",
-        detail_url="https://example.com/jobs/official-live-001",
-        apply_url="https://example.com/jobs/official-live-001/apply",
-        source_company_url="https://example.com/careers",
-        apply_requires_login=True,
-        jd_text="React TypeScript Electron FastAPI official site flow",
-        jd_hash="official-live-001-hash",
+        lang="zh-CN",
+        crawl_time=datetime(2026, 3, 10),
         raw_payload={"source": "test", "platform": "official"},
     )
 
@@ -106,7 +111,7 @@ def test_platform_registry_returns_official_and_disabled_boss(client):
     assert [item["platform"] for item in payload] == ["official", "boss"]
     assert payload[0]["selectable"] is True
     assert payload[1]["selectable"] is False
-    assert "archive/boss-login" in payload[1]["disabled_reason"]
+    assert "未启用" in payload[1]["disabled_reason"]
 
 
 def test_runtime_config_exposes_llm_status_without_secrets(client):
@@ -120,7 +125,7 @@ def test_runtime_config_exposes_llm_status_without_secrets(client):
     assert payload["llm_configured"] is False
     assert payload["llm_notice"]
     assert "OPENRESUME_OPENAI_API_KEY" in payload["llm_missing_envs"]
-    assert payload["official_source_file"].endswith("url.md")
+    assert payload["official_sources_summary"] == "代码清单：字节跳动社招 + 校招"
     assert payload["openai_api_key_configured"] is False
     assert payload["openai_api_key_preview"] is None
 
@@ -214,10 +219,14 @@ def test_search_pipeline_returns_matches_and_degraded_notice(client, monkeypatch
     assert len(payload) == 1
     assert payload[0]["platform"] == "official"
     assert payload[0]["apply_supported"] is True
+    assert payload[0]["listing_id"]
+    assert payload[0]["job_id"] == "official-live-001"
+    assert payload[0]["source_company"] == "ByteDance"
+    assert payload[0]["description_text"]
     assert payload[0]["analysis_degraded"] is True
 
 
-def test_guided_apply_requires_consent_and_can_continue_after_popup(client, monkeypatch):
+def test_guided_apply_requires_consent_and_uses_listing_id(client, monkeypatch):
     upsert_profile(client, with_resume=True)
 
     async def fake_search_jobs(search, profile):
@@ -236,20 +245,19 @@ def test_guided_apply_requires_consent_and_can_continue_after_popup(client, monk
     assert session.status_code == 200
     wait_for_session_status(client, session.json()["id"], "ready")
 
-    job_id = client.get(f"/api/search-sessions/{session.json()['id']}/matches").json()[0]["job_id"]
-    attempt = client.post(f"/api/jobs/{job_id}/guided-apply")
+    listing_id = client.get(f"/api/search-sessions/{session.json()['id']}/matches").json()[0]["listing_id"]
+    attempt = client.post(f"/api/jobs/{listing_id}/guided-apply")
     assert attempt.status_code == 200
     assert attempt.json()["status"] == "needs_verification"
+    assert attempt.json()["listing_id"] == listing_id
 
     verification = client.post(
         f"/api/application-attempts/{attempt.json()['id']}/open-verification-window"
     )
     assert verification.status_code == 200
-    assert verification.json()["url"].endswith("/apply")
+    assert "验证码" in verification.json()["message"]
 
-    continued = client.post(
-        f"/api/application-attempts/{attempt.json()['id']}/continue"
-    )
+    continued = client.post(f"/api/application-attempts/{attempt.json()['id']}/continue")
     assert continued.status_code == 200
     assert continued.json()["status"] == "prepared"
 
@@ -292,10 +300,10 @@ def test_disabled_platform_is_rejected(client):
     upsert_profile(client)
     response = create_search_session(client, platforms=["boss"])
     assert response.status_code == 409
-    assert "archive/boss-login" in response.json()["detail"]
+    assert "未启用 Boss" in response.json()["detail"]
 
 
-def test_openai_failure_does_not_fallback_to_heuristic(client, monkeypatch):
+def test_openai_failure_falls_back_to_heuristic(client, monkeypatch):
     upsert_profile(client)
 
     async def fake_search_jobs(search, profile):
@@ -322,9 +330,10 @@ def test_openai_failure_does_not_fallback_to_heuristic(client, monkeypatch):
     session = create_search_session(client)
     assert session.status_code == 200
 
-    failed = wait_for_session_status(client, session.json()["id"], "failed")
-    assert "model backend unavailable" in failed["summary"]
+    ready = wait_for_session_status(client, session.json()["id"], "ready")
+    assert ready["analysis_degraded"] is True
+    assert "LLM 调用失败" in (ready["analysis_notice"] or "")
 
     matches = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
     assert matches.status_code == 200
-    assert matches.json() == []
+    assert len(matches.json()) == 1
