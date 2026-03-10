@@ -482,7 +482,7 @@ class TestTencentCollector:
         result = collector._to_record(
             source,
             {"PostId": "", "RecruitPostName": "Engineer"},
-            provider=provider,
+            careers_provider=provider,
             crawl_time=datetime(2026, 3, 10),
         )
         assert result is None
@@ -511,7 +511,7 @@ class TestTencentCollector:
                 "LastUpdateTime": "2026年03月10日",
                 "PostURL": "http://careers.tencent.com/jobdesc.html?postId=123",
             },
-            provider=provider,
+            careers_provider=provider,
             crawl_time=datetime(2026, 3, 10),
         )
         assert result is not None
@@ -541,11 +541,46 @@ class TestTencentCollector:
         result = collector._to_record(
             source,
             {"PostId": "123", "RecruitPostName": "Engineer"},
-            provider=provider,
+            careers_provider=provider,
             crawl_time=datetime(2026, 3, 10),
         )
         assert result is not None
         assert result.employment_type == "校招"
+
+
+
+    def test_to_record_maps_joinqq_fields(self):
+        collector = TencentCollector()
+        source = make_source(
+            key="test",
+            collector_key="tencent",
+            variant="internship",
+            company_name="Tencent",
+            entry_url="https://join.qq.com/post.html?query=p_2",
+            source_site="careers.tencent.com",
+        )
+        provider = MagicMock()
+        provider.detail_url.return_value = "https://careers.tencent.com/jobdesc.html?postId=123"
+        result = collector._to_record(
+            source,
+            {
+                "postId": "1200791473415778304",
+                "positionTitle": "Frontend Engineer",
+                "workCities": "Shenzhen Beijing",
+                "projectName": "Internship",
+                "recruitLabelName": "Internship",
+                "__source_site": "join.qq.com",
+            },
+            careers_provider=provider,
+            crawl_time=datetime(2026, 3, 10),
+        )
+        assert result is not None
+        assert result.job_id == "1200791473415778304"
+        assert result.title == "Frontend Engineer"
+        assert result.employment_type == "\u5b9e\u4e60"
+        assert result.source_site == "join.qq.com"
+        assert "join.qq.com/post_detail.html" in result.apply_url
+
 
 class TestTaobaoCollector:
     def test_collector_key_is_taobao(self):

@@ -36,7 +36,7 @@ export function pillLabel(label: string) {
     prepared: "已准备",
     cancelled: "已取消",
     draft: "草稿",
-    official: "字节跳动官网",
+    official: "招聘官网",
     boss: "Boss",
     fresh: "实时",
     cached: "缓存",
