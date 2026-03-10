@@ -40,7 +40,8 @@ class MatchingService:
         salary_floor: int,
     ) -> list[RuleMatch]:
         matches: list[RuleMatch] = []
-        targets = [target.lower() for target in requested_targets or profile.target_roles]
+        active_targets = requested_targets or profile.target_roles
+        targets = [target.lower() for target in active_targets]
         cities = {
             normalize_city(city)
             for city in (requested_cities or profile.preferred_cities)
@@ -57,15 +58,15 @@ class MatchingService:
                 [draft.title, draft.description_text, draft.requirements_text]
             )
             lowered = combined_text.lower()
-
-            if not self._city_matches(draft.location_city or draft.location_raw, cities):
-                continue
-            if salary_floor and draft.salary_min and draft.salary_min < salary_floor:
-                continue
-            if not self._target_matches(
-                combined_text, requested_targets or profile.target_roles
-            ):
-                continue
+            location_text = draft.location_city or draft.location_raw
+            city_match = self._city_matches(location_text, cities)
+            salary_known = draft.salary_min is not None
+            salary_match = (
+                not salary_floor
+                or not salary_known
+                or bool(draft.salary_min and draft.salary_min >= salary_floor)
+            )
+            target_match = self._target_matches(combined_text, active_targets)
 
             matched_keywords = [
                 original
@@ -77,22 +78,24 @@ class MatchingService:
                 for keyword in requested_keywords or profile.must_have_keywords
                 if keyword.lower() not in lowered
             ]
-            if must_have and len(missing_keywords) >= len(must_have):
-                continue
 
             skill_component = min(35.0, len(matched_keywords) * 7.0)
-            role_component = 25.0 if any(target in lowered for target in targets) else 10.0
+            role_component = 25.0 if target_match else (10.0 if not targets else 3.0)
             salary_component = (
-                10.0 if draft.salary_min and draft.salary_min >= salary_floor else 5.0
+                10.0
+                if salary_floor and salary_match
+                else 6.0
+                if not salary_floor
+                else 4.0
+                if not salary_known
+                else 1.0
             )
             location_component = (
-                8.0
-                if self._city_matches(draft.location_city or draft.location_raw, cities)
-                else 2.0
+                8.0 if city_match else (4.0 if not cities else 1.0)
             )
             freshness_component = 12.0 if draft.posted_at else 6.0
             requirement_component = 10.0 if draft.requirements_text else 5.0
-            score = (
+            base_score = (
                 skill_component
                 + role_component
                 + salary_component
@@ -101,22 +104,42 @@ class MatchingService:
                 + requirement_component
             )
 
+            penalty = 0.0
+            if cities and not city_match:
+                penalty += 12.0
+            if salary_floor and not salary_match:
+                penalty += 10.0
+            if targets and not target_match:
+                penalty += 18.0
+            if must_have:
+                missing_ratio = len(missing_keywords) / max(1, len(must_have))
+                penalty += min(18.0, missing_ratio * 18.0)
+
+            score = max(base_score - penalty, 0.0)
             risk_flags: list[str] = []
+            if cities and not city_match:
+                risk_flags.append("City preference mismatch")
+            if salary_floor and salary_known and not salary_match:
+                risk_flags.append("Salary below floor")
+            if targets and not target_match:
+                risk_flags.append("Role keyword match is weak")
+            if must_have and len(missing_keywords) >= max(1, (len(must_have) + 1) // 2):
+                risk_flags.append("Many required keywords missing")
             if draft.remote_type.lower() == "onsite":
-                risk_flags.append("需要现场办公")
+                risk_flags.append("Onsite work required")
             if "leader" in lowered or "team lead" in lowered:
-                risk_flags.append("可能包含管理职责")
+                risk_flags.append("May include people management")
             if profile.years_experience < 3 and re.search(
                 r"(3-5\s*years|3\+\s*years|\u4e09\u5e74\u4ee5\u4e0a|\d+\s*-\s*\d+\s*\u5e74)",
                 combined_text,
                 re.IGNORECASE,
             ):
-                risk_flags.append("经验要求可能偏高")
+                risk_flags.append("Experience requirement may be high")
 
             matches.append(
                 RuleMatch(
                     draft=draft,
-                    rule_score=max(score, 0.0),
+                    rule_score=score,
                     highlights=matched_keywords[:5],
                     missing_keywords=missing_keywords[:4],
                     risk_flags=risk_flags,

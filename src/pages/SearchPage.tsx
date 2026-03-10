@@ -7,6 +7,8 @@ import { api } from "../lib/api";
 import { splitCommaValues } from "../lib/utils";
 import type { AutomationMode, PlatformCapability } from "../types";
 
+const FILTER_COLLAPSED_STORAGE_KEY = "openresume.search.filters.collapsed";
+
 const modeCards: Array<{
   mode: AutomationMode;
   title: string;
@@ -16,18 +18,18 @@ const modeCards: Array<{
   {
     mode: "recommend_only",
     title: "仅推荐",
-    body: "只抓取、清洗并排序职位，不打开职位页面。",
+    body: "只抓取、清洗并排序职位，不自动打开职位页面。",
   },
   {
     mode: "review_in_browser",
     title: "打开职位页",
-    body: "在本地浏览器壳中打开清洗后的官网职位页面。",
+    body: "在本地浏览器中打开排序后的职位页面继续查看。",
     capabilityFlag: "review_open_supported",
   },
   {
     mode: "guided_apply",
     title: "引导投递",
-    body: "排序完成后，在应用内继续引导投递流程。",
+    body: "排序完成后，在应用内继续走引导投递流程。",
     capabilityFlag: "guided_apply_supported",
   },
 ];
@@ -39,6 +41,17 @@ function modeSupported(platforms: PlatformCapability[], mode: AutomationMode) {
     return true;
   }
   return platforms.every((platform) => platform[flag]);
+}
+
+function initialCollapsedState() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  const stored = window.localStorage.getItem(FILTER_COLLAPSED_STORAGE_KEY);
+  if (stored === "1" || stored === "0") {
+    return stored === "1";
+  }
+  return window.matchMedia("(max-width: 1279px)").matches;
 }
 
 export function SearchPage() {
@@ -53,6 +66,7 @@ export function SearchPage() {
   const [mustHaveKeywords, setMustHaveKeywords] = useState("");
   const [selectedVariants, setSelectedVariants] = useState<string[]>([]);
   const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
+  const [filtersCollapsed, setFiltersCollapsed] = useState(initialCollapsedState);
 
   const platformsQuery = useQuery({
     queryKey: ["platforms"],
@@ -62,6 +76,10 @@ export function SearchPage() {
     queryKey: ["app-state"],
     queryFn: api.getAppState,
   });
+
+  useEffect(() => {
+    window.localStorage.setItem(FILTER_COLLAPSED_STORAGE_KEY, filtersCollapsed ? "1" : "0");
+  }, [filtersCollapsed]);
 
   useEffect(() => {
     if (!platformsQuery.data?.length) {
@@ -155,23 +173,31 @@ export function SearchPage() {
       <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
         <p className="text-xs uppercase tracking-[0.24em] text-slate">搜索职位</p>
         <h1 className="mt-3 font-display text-5xl text-ink">
-          当前官网搜索只接入字节跳动，并发抓取社招和校招。
+          当前官网搜索接入字节跳动，并并发抓取社招、校招与实习。
         </h1>
         <p className="mt-4 max-w-3xl text-sm leading-7 text-slate">
-          当前版本不再从 <code>url.md</code> 读取运行时公司列表，而是使用代码清单。
-          搜索时会并发抓取字节跳动社招和校招，并直接使用列表接口返回的职位内容做清洗和排序。
+          搜索时会从代码清单并发抓取职位，并在本地完成清洗和排序。筛选栏仅控制来源范围，
+          岗位相关性通过排序体现，不会再因为硬过滤直接丢失候选职位。
         </p>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[0.25fr_1fr_0.9fr]">
-        <SearchFilterSidebar
-          selectedVariants={selectedVariants}
-          selectedCompanies={selectedCompanies}
-          onVariantsChange={setSelectedVariants}
-          onCompaniesChange={setSelectedCompanies}
-        />
+      <section className="flex flex-col gap-6 xl:flex-row">
+        <div
+          className={`shrink-0 transition-all duration-300 ${
+            filtersCollapsed ? "xl:w-[96px]" : "xl:w-[320px]"
+          }`}
+        >
+          <SearchFilterSidebar
+            selectedVariants={selectedVariants}
+            selectedCompanies={selectedCompanies}
+            onVariantsChange={setSelectedVariants}
+            onCompaniesChange={setSelectedCompanies}
+            collapsed={filtersCollapsed}
+            onCollapsedChange={setFiltersCollapsed}
+          />
+        </div>
 
-        <div className="space-y-6">
+        <div className="min-w-0 flex-1 space-y-6">
           <div className="grid gap-4 md:grid-cols-3">
             {modeCards.map((entry) => {
               const available = modeSupported(selectedPlatformCapabilities, entry.mode);
@@ -201,9 +227,9 @@ export function SearchPage() {
 
           <div className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
             <div className="grid gap-5 md:grid-cols-2">
-              <div className="space-y-3">
+              <div className="space-y-3 md:col-span-2">
                 <span className="text-xs uppercase tracking-[0.2em] text-slate">平台</span>
-                <div className="space-y-3">
+                <div className="grid gap-3 md:grid-cols-2">
                   {platformsQuery.data?.map((platform) => {
                     const checked = selectedPlatforms.includes(platform.platform);
                     return (
@@ -254,20 +280,20 @@ export function SearchPage() {
                 />
               </label>
               <label className="space-y-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-slate">目标职位</span>
-                <textarea
-                  rows={4}
-                  value={jobTargets}
-                  onChange={(event) => setJobTargets(event.target.value)}
-                  className="w-full rounded-[24px] border border-ink/10 bg-paper px-4 py-3 text-sm leading-7 text-ink outline-none transition focus:border-ink/30"
-                />
-              </label>
-              <label className="space-y-2">
                 <span className="text-xs uppercase tracking-[0.2em] text-slate">目标城市</span>
                 <textarea
                   rows={4}
                   value={cities}
                   onChange={(event) => setCities(event.target.value)}
+                  className="w-full rounded-[24px] border border-ink/10 bg-paper px-4 py-3 text-sm leading-7 text-ink outline-none transition focus:border-ink/30"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-slate">目标职位</span>
+                <textarea
+                  rows={4}
+                  value={jobTargets}
+                  onChange={(event) => setJobTargets(event.target.value)}
                   className="w-full rounded-[24px] border border-ink/10 bg-paper px-4 py-3 text-sm leading-7 text-ink outline-none transition focus:border-ink/30"
                 />
               </label>
@@ -311,48 +337,48 @@ export function SearchPage() {
               </div>
             ) : null}
           </div>
-        </div>
 
-        <div className="space-y-6">
-          <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
-            <p className="text-xs uppercase tracking-[0.24em] text-slate">当前限制</p>
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <div className="rounded-[24px] bg-paper p-5">
-                <p className="text-sm text-slate">每小时剩余</p>
-                <p className="mt-2 font-display text-5xl text-ink">
-                  {riskStatusQuery.data?.remaining_hourly ?? "--"}
-                </p>
-              </div>
-              <div className="rounded-[24px] bg-paper p-5">
-                <p className="text-sm text-slate">每日剩余</p>
-                <p className="mt-2 font-display text-5xl text-ink">
-                  {riskStatusQuery.data?.remaining_daily ?? "--"}
-                </p>
-              </div>
-            </div>
-            <p className="mt-5 text-sm text-slate">
-              冷却到期：{riskStatusQuery.data?.cooldown_until || "无"}
-            </p>
-          </section>
-
-          <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
-            <p className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-slate">
-              <AlertTriangle size={16} />
-              已选平台能力
-            </p>
-            <div className="mt-5 space-y-4">
-              {selectedPlatformCapabilities.map((platform) => (
-                <div key={platform.platform} className="rounded-[24px] bg-paper p-5 text-sm text-slate">
-                  <p className="font-semibold text-ink">{platform.label}</p>
-                  <p className="mt-2">
-                    搜索：{platform.search_supported ? "支持" : "不支持"} | 查看：{" "}
-                    {platform.review_open_supported ? "支持" : "不支持"} | 引导投递：{" "}
-                    {platform.guided_apply_supported ? "支持" : "不支持"}
+          <div className="grid gap-6 lg:grid-cols-2">
+            <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
+              <p className="text-xs uppercase tracking-[0.24em] text-slate">当前限制</p>
+              <div className="mt-5 grid gap-4 grid-cols-2">
+                <div className="rounded-[24px] bg-paper p-5">
+                  <p className="text-sm text-slate">每小时剩余</p>
+                  <p className="mt-2 font-display text-5xl text-ink">
+                    {riskStatusQuery.data?.remaining_hourly ?? "--"}
                   </p>
                 </div>
-              ))}
-            </div>
-          </section>
+                <div className="rounded-[24px] bg-paper p-5">
+                  <p className="text-sm text-slate">每日剩余</p>
+                  <p className="mt-2 font-display text-5xl text-ink">
+                    {riskStatusQuery.data?.remaining_daily ?? "--"}
+                  </p>
+                </div>
+              </div>
+              <p className="mt-5 text-sm text-slate">
+                冷却到期：{riskStatusQuery.data?.cooldown_until || "无"}
+              </p>
+            </section>
+
+            <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
+              <p className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-slate">
+                <AlertTriangle size={16} />
+                已选平台能力
+              </p>
+              <div className="mt-5 space-y-4">
+                {selectedPlatformCapabilities.map((platform) => (
+                  <div key={platform.platform} className="rounded-[24px] bg-paper p-5 text-sm text-slate">
+                    <p className="font-semibold text-ink">{platform.label}</p>
+                    <p className="mt-2">
+                      搜索：{platform.search_supported ? "支持" : "不支持"} | 查看：
+                      {platform.review_open_supported ? "支持" : "不支持"} | 引导投递：
+                      {platform.guided_apply_supported ? "支持" : "不支持"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
         </div>
       </section>
     </div>

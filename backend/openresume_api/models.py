@@ -48,6 +48,8 @@ class SearchSession(SQLModel, table=True):
     cities: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     salary_floor: int = 0
     must_have_keywords: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    source_variants: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    source_companies: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     blocked_reason: str | None = None
     summary: str | None = None
     analysis_provider: str = "heuristic"

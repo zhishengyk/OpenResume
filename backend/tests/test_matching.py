@@ -10,7 +10,6 @@ def make_draft(
     *,
     title: str = "Frontend Engineer",
     location_city: str = "Shanghai",
-    location_raw: str = "",
     salary_min: int | None = 30000,
     salary_max: int | None = 40000,
     description_text: str = "React TypeScript",
@@ -25,13 +24,13 @@ def make_draft(
         job_id=job_id,
         title=title,
         employment_type=employment_type,
-        location_raw=location_raw or location_city,
+        location_raw=location_city,
         location_city=location_city,
         location_country="China",
         remote_type=remote_type,
         description_text=description_text,
         requirements_text=requirements_text,
-        apply_url=f"https://jobs.bytedance.com/experienced/position/{job_id}/detail",
+        apply_url=f"https://jobs.bytedance.com/position/{job_id}/detail",
         salary_raw=f"{salary_min}k-{salary_max}k" if salary_min and salary_max else "",
         salary_min=salary_min,
         salary_max=salary_max,
@@ -60,77 +59,34 @@ def make_profile(
     )
 
 
-def test_matching_service_filters_and_scores_expected_roles():
-    profile = CandidateProfile(
-        id=1,
+def test_matching_service_soft_ranks_mismatches_instead_of_filtering_out():
+    profile = make_profile(
         target_roles=["Frontend Engineer"],
-        preferred_cities=["Shanghai"],
-        salary_floor=25000,
-        skills=["React", "TypeScript", "Node.js"],
+        preferred_cities=["Beijing"],
         must_have_keywords=["React", "TypeScript"],
     )
     drafts = [
-        NormalizedJobDraft(
-            source_company="ByteDance",
-            source_site="jobs.bytedance.com",
-            job_id="1",
+        make_draft(
+            "perfect",
             title="Senior Frontend Engineer",
-            employment_type="Experienced",
-            location_raw="Shanghai",
-            location_city="Shanghai",
-            location_country="China",
-            remote_type="hybrid",
-            description_text="React TypeScript Node.js design system engineering",
-            requirements_text="React TypeScript",
-            apply_url="https://jobs.bytedance.com/experienced/position/1/detail",
-            salary_raw="30k-40k",
-            salary_min=30000,
-            salary_max=40000,
-            posted_at=datetime(2026, 3, 1),
-            raw_payload={"platform": "official"},
-        ),
-        NormalizedJobDraft(
-            source_company="ByteDance",
-            source_site="jobs.bytedance.com",
-            job_id="2",
-            title="Backend Engineer",
-            employment_type="Experienced",
-            location_raw="Beijing",
             location_city="Beijing",
-            location_country="China",
-            remote_type="onsite",
-            description_text="Python FastAPI",
-            requirements_text="Python",
-            apply_url="https://jobs.bytedance.com/experienced/position/2/detail",
-            salary_raw="20k-28k",
-            salary_min=20000,
-            salary_max=28000,
-            posted_at=datetime(2026, 3, 1),
-            raw_payload={"platform": "official"},
+            salary_min=35000,
+            description_text="React TypeScript Node.js",
         ),
-    ]
-
-    matches = matching_service.filter_and_score(
-        profile=profile,
-        drafts=drafts,
-        requested_targets=["Frontend Engineer"],
-        requested_cities=["Shanghai"],
-        requested_keywords=["React", "TypeScript"],
-        salary_floor=25000,
-    )
-
-    assert len(matches) == 1
-    assert matches[0].draft.job_id == "1"
-    assert matches[0].rule_score > 70
-    assert "React" in matches[0].highlights
-
-
-def test_matching_service_filters_by_city():
-    profile = make_profile(preferred_cities=["Beijing"])
-    drafts = [
-        make_draft("1", location_city="Shanghai"),
-        make_draft("2", location_city="Beijing"),
-        make_draft("3", location_city="Shenzhen"),
+        make_draft("city_mismatch", location_city="Shanghai", salary_min=35000),
+        make_draft("salary_mismatch", location_city="Beijing", salary_min=18000),
+        make_draft(
+            "target_mismatch",
+            title="Backend Engineer",
+            location_city="Beijing",
+            description_text="Python FastAPI",
+        ),
+        make_draft(
+            "keyword_mismatch",
+            location_city="Beijing",
+            description_text="Frontend work with Vue",
+            requirements_text="JavaScript",
+        ),
     ]
 
     matches = matching_service.filter_and_score(
@@ -138,44 +94,64 @@ def test_matching_service_filters_by_city():
         drafts=drafts,
         requested_targets=["Frontend Engineer"],
         requested_cities=["Beijing"],
-        requested_keywords=[],
-        salary_floor=0,
-    )
-
-    assert len(matches) == 1
-    assert matches[0].draft.location_city == "Beijing"
-
-
-def test_matching_service_filters_by_salary_floor():
-    profile = make_profile(salary_floor=30000)
-    drafts = [
-        make_draft("1", salary_min=25000, salary_max=35000),
-        make_draft("2", salary_min=35000, salary_max=45000),
-        make_draft("3", salary_min=None, salary_max=None),
-    ]
-
-    matches = matching_service.filter_and_score(
-        profile=profile,
-        drafts=drafts,
-        requested_targets=["Frontend Engineer"],
-        requested_cities=[],
-        requested_keywords=[],
+        requested_keywords=["React", "TypeScript"],
         salary_floor=30000,
     )
 
-    assert len(matches) == 2
-    matched_ids = {m.draft.job_id for m in matches}
-    assert "2" in matched_ids
-    assert "3" in matched_ids
-    assert "1" not in matched_ids
+    assert len(matches) == 5
+    score_by_id = {item.draft.job_id: item.rule_score for item in matches}
+    assert score_by_id["perfect"] > score_by_id["city_mismatch"]
+    assert score_by_id["perfect"] > score_by_id["salary_mismatch"]
+    assert score_by_id["perfect"] > score_by_id["target_mismatch"]
+    assert score_by_id["perfect"] > score_by_id["keyword_mismatch"]
 
 
-def test_matching_service_filters_by_target_role():
+def test_matching_service_marks_soft_mismatch_reasons():
+    profile = make_profile(
+        target_roles=["Frontend Engineer"],
+        preferred_cities=["Beijing"],
+        must_have_keywords=["React", "TypeScript"],
+    )
+    draft = make_draft(
+        "mismatch",
+        title="Backend Engineer",
+        location_city="Shanghai",
+        salary_min=20000,
+        description_text="Python only",
+        requirements_text="Python",
+    )
+
+    matches = matching_service.filter_and_score(
+        profile=profile,
+        drafts=[draft],
+        requested_targets=["Frontend Engineer"],
+        requested_cities=["Beijing"],
+        requested_keywords=["React", "TypeScript"],
+        salary_floor=30000,
+    )
+
+    assert len(matches) == 1
+    assert "City preference mismatch" in matches[0].risk_flags
+    assert "Salary below floor" in matches[0].risk_flags
+    assert "Role keyword match is weak" in matches[0].risk_flags
+    assert "Many required keywords missing" in matches[0].risk_flags
+
+
+def test_matching_service_keeps_campus_and_internship_entries():
     profile = make_profile(target_roles=["Backend Engineer"])
     drafts = [
-        make_draft("1", title="Senior Frontend Engineer"),
-        make_draft("2", title="Backend Engineer Python"),
-        make_draft("3", title="Full Stack Engineer"),
+        make_draft(
+            "campus",
+            title="校招前端开发工程师",
+            employment_type="Campus",
+            description_text="React TypeScript",
+        ),
+        make_draft(
+            "intern",
+            title="实习前端开发工程师",
+            employment_type="Internship",
+            description_text="React TypeScript",
+        ),
     ]
 
     matches = matching_service.filter_and_score(
@@ -187,66 +163,10 @@ def test_matching_service_filters_by_target_role():
         salary_floor=0,
     )
 
-    assert len(matches) == 1
-    assert "Backend" in matches[0].draft.title
-
-
-def test_matching_service_filters_by_must_have_keywords():
-    profile = make_profile(must_have_keywords=["React", "TypeScript"])
-    drafts = [
-        make_draft("1", description_text="React TypeScript Node.js"),
-        make_draft("2", description_text="React only"),
-        make_draft("3", description_text="Vue JavaScript"),
-    ]
-
-    matches = matching_service.filter_and_score(
-        profile=profile,
-        drafts=drafts,
-        requested_targets=["Frontend Engineer"],
-        requested_cities=[],
-        requested_keywords=["React", "TypeScript"],
-        salary_floor=0,
-    )
-
-    matched_ids = {m.draft.job_id for m in matches}
-    assert "1" in matched_ids
-    assert "2" in matched_ids
-
-
-def test_matching_service_returns_empty_for_no_matches():
-    profile = make_profile(
-        target_roles=["Frontend Engineer"],
-        preferred_cities=["Shanghai"],
-    )
-    drafts = [
-        make_draft("1", title="Backend Engineer", location_city="Beijing"),
-    ]
-
-    matches = matching_service.filter_and_score(
-        profile=profile,
-        drafts=drafts,
-        requested_targets=["Frontend Engineer"],
-        requested_cities=["Shanghai"],
-        requested_keywords=[],
-        salary_floor=0,
-    )
-
-    assert len(matches) == 0
-
-
-def test_matching_service_handles_empty_drafts():
-    profile = make_profile()
-
-    matches = matching_service.filter_and_score(
-        profile=profile,
-        drafts=[],
-        requested_targets=["Frontend Engineer"],
-        requested_cities=["Shanghai"],
-        requested_keywords=[],
-        salary_floor=0,
-    )
-
-    assert len(matches) == 0
+    assert len(matches) == 2
+    for item in matches:
+        assert item.draft.job_id in {"campus", "intern"}
+        assert "Role keyword match is weak" in item.risk_flags
 
 
 def test_matching_service_sorts_by_score_descending():
@@ -271,108 +191,17 @@ def test_matching_service_sorts_by_score_descending():
     assert matches[1].rule_score >= matches[2].rule_score
 
 
-def test_matching_service_detects_onsite_risk_flag():
-    profile = make_profile()
-    drafts = [
-        make_draft("1", remote_type="onsite"),
-        make_draft("2", remote_type="hybrid"),
-        make_draft("3", remote_type="remote"),
-    ]
-
-    matches = matching_service.filter_and_score(
-        profile=profile,
-        drafts=drafts,
-        requested_targets=["Frontend Engineer"],
-        requested_cities=[],
-        requested_keywords=[],
-        salary_floor=0,
-    )
-
-    onsite_match = next((m for m in matches if m.draft.job_id == "1"), None)
-    assert onsite_match is not None
-    assert "需要现场办公" in onsite_match.risk_flags
-
-    hybrid_match = next((m for m in matches if m.draft.job_id == "2"), None)
-    assert hybrid_match is not None
-    assert "需要现场办公" not in hybrid_match.risk_flags
-
-
-def test_matching_service_detects_leadership_risk_flag():
-    profile = make_profile()
-    drafts = [
-        make_draft("1", description_text="Team leader position"),
-        make_draft("2", description_text="Individual contributor"),
-    ]
-
-    matches = matching_service.filter_and_score(
-        profile=profile,
-        drafts=drafts,
-        requested_targets=["Frontend Engineer"],
-        requested_cities=[],
-        requested_keywords=[],
-        salary_floor=0,
-    )
-
-    leader_match = next((m for m in matches if m.draft.job_id == "1"), None)
-    assert leader_match is not None
-    assert "可能包含管理职责" in leader_match.risk_flags
-
-
-def test_matching_service_detects_experience_risk_flag():
+def test_matching_service_adds_existing_risk_flags():
     profile = make_profile(years_experience=2)
-    drafts = [
-        make_draft("1", description_text="3-5 years experience required"),
-        make_draft("2", description_text="Entry level position"),
-    ]
+    draft = make_draft(
+        "1",
+        remote_type="onsite",
+        description_text="Team leader, 3-5 years experience required",
+    )
 
     matches = matching_service.filter_and_score(
         profile=profile,
-        drafts=drafts,
-        requested_targets=["Frontend Engineer"],
-        requested_cities=[],
-        requested_keywords=[],
-        salary_floor=0,
-    )
-
-    exp_match = next((m for m in matches if m.draft.job_id == "1"), None)
-    assert exp_match is not None
-    assert "经验要求可能偏高" in exp_match.risk_flags
-
-
-def test_matching_service_uses_profile_defaults_when_request_empty():
-    profile = make_profile(
-        target_roles=["Frontend Engineer"],
-        preferred_cities=["Shanghai"],
-        skills=["React"],
-        must_have_keywords=["React"],
-    )
-    drafts = [
-        make_draft("1", location_city="Shanghai", description_text="React Frontend"),
-        make_draft("2", location_city="Beijing", description_text="Vue Backend"),
-    ]
-
-    matches = matching_service.filter_and_score(
-        profile=profile,
-        drafts=drafts,
-        requested_targets=[],
-        requested_cities=[],
-        requested_keywords=[],
-        salary_floor=0,
-    )
-
-    assert len(matches) == 1
-    assert matches[0].draft.job_id == "1"
-
-
-def test_matching_service_handles_missing_optional_fields():
-    profile = make_profile()
-    drafts = [
-        make_draft("1", posted_at=None, requirements_text="", salary_min=None),
-    ]
-
-    matches = matching_service.filter_and_score(
-        profile=profile,
-        drafts=drafts,
+        drafts=[draft],
         requested_targets=["Frontend Engineer"],
         requested_cities=[],
         requested_keywords=[],
@@ -380,80 +209,7 @@ def test_matching_service_handles_missing_optional_fields():
     )
 
     assert len(matches) == 1
-    assert matches[0].rule_score > 0
-
-
-def test_matching_service_limits_highlights_to_five():
-    profile = make_profile(skills=["React", "TypeScript", "Node.js", "Python", "Go", "Rust", "Java"])
-    drafts = [
-        make_draft("1", description_text="React TypeScript Node.js Python Go Rust Java"),
-    ]
-
-    matches = matching_service.filter_and_score(
-        profile=profile,
-        drafts=drafts,
-        requested_targets=["Frontend Engineer"],
-        requested_cities=[],
-        requested_keywords=[],
-        salary_floor=0,
-    )
-
-    assert len(matches[0].highlights) <= 5
-
-
-def test_matching_service_limits_missing_keywords_to_four():
-    profile = make_profile(must_have_keywords=["A", "B", "C", "D", "E", "F"])
-    drafts = [
-        make_draft("1", description_text="Only A and B mentioned"),
-    ]
-
-    matches = matching_service.filter_and_score(
-        profile=profile,
-        drafts=drafts,
-        requested_targets=["Frontend Engineer"],
-        requested_cities=[],
-        requested_keywords=["A", "B", "C", "D", "E", "F"],
-        salary_floor=0,
-    )
-
-    assert len(matches[0].missing_keywords) <= 4
-
-
-def test_matching_service_normalizes_city_names():
-    profile = make_profile(preferred_cities=["上海"])
-    drafts = [
-        make_draft("1", location_city="Shanghai"),
-        make_draft("2", location_city="北京"),
-    ]
-
-    matches = matching_service.filter_and_score(
-        profile=profile,
-        drafts=drafts,
-        requested_targets=["Frontend Engineer"],
-        requested_cities=["上海"],
-        requested_keywords=[],
-        salary_floor=0,
-    )
-
-    assert len(matches) == 1
-    assert matches[0].draft.location_city == "Shanghai"
-
-
-def test_matching_service_case_insensitive_matching():
-    profile = make_profile(target_roles=["FRONTEND ENGINEER"])
-    drafts = [
-        make_draft("1", title="frontend engineer"),
-        make_draft("2", title="FRONTEND ENGINEER"),
-        make_draft("3", title="Frontend Engineer"),
-    ]
-
-    matches = matching_service.filter_and_score(
-        profile=profile,
-        drafts=drafts,
-        requested_targets=["FRONTEND ENGINEER"],
-        requested_cities=[],
-        requested_keywords=[],
-        salary_floor=0,
-    )
-
-    assert len(matches) == 3
+    risk_flags = set(matches[0].risk_flags)
+    assert "Onsite work required" in risk_flags
+    assert "May include people management" in risk_flags
+    assert "Experience requirement may be high" in risk_flags

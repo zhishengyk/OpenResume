@@ -71,10 +71,12 @@ def test_search_session_migration_rebuilds_legacy_platform_column():
                 id,
                 requested_platforms,
                 analysis_provider,
-                analysis_degraded
+                analysis_degraded,
+                source_variants,
+                source_companies
             FROM searchsession
             """
         ).fetchone()
-        assert row == ("session-1", '["official"]', "heuristic", 0)
+        assert row == ("session-1", '["official"]', "heuristic", 0, "[]", "[]")
     finally:
         connection.close()

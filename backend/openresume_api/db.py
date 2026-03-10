@@ -55,6 +55,12 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
         analysis_notice_expr = (
             "analysis_notice" if "analysis_notice" in columns else "NULL"
         )
+        source_variants_expr = (
+            "source_variants" if "source_variants" in columns else "NULL"
+        )
+        source_companies_expr = (
+            "source_companies" if "source_companies" in columns else "NULL"
+        )
         rows = connection.execute(
             f"""
             SELECT
@@ -67,6 +73,8 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                 cities,
                 salary_floor,
                 must_have_keywords,
+                {source_variants_expr},
+                {source_companies_expr},
                 blocked_reason,
                 summary,
                 {analysis_provider_expr},
@@ -88,6 +96,8 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                 cities JSON,
                 salary_floor INTEGER NOT NULL,
                 must_have_keywords JSON,
+                source_variants JSON,
+                source_companies JSON,
                 blocked_reason TEXT,
                 summary TEXT,
                 analysis_provider TEXT NOT NULL DEFAULT 'heuristic',
@@ -109,6 +119,8 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                 cities,
                 salary_floor,
                 must_have_keywords,
+                source_variants,
+                source_companies,
                 blocked_reason,
                 summary,
                 analysis_provider,
@@ -132,6 +144,8 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                     cities,
                     salary_floor,
                     must_have_keywords,
+                    source_variants,
+                    source_companies,
                     blocked_reason,
                     summary,
                     analysis_provider,
@@ -139,7 +153,7 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                     analysis_notice,
                     created_at,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
@@ -150,6 +164,8 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                     cities,
                     salary_floor,
                     must_have_keywords,
+                    source_variants or json.dumps([], ensure_ascii=False),
+                    source_companies or json.dumps([], ensure_ascii=False),
                     blocked_reason,
                     summary,
                     analysis_provider or "heuristic",
@@ -187,6 +203,18 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
         "analysis_notice",
         "analysis_notice TEXT",
     )
+    _add_column_if_missing(
+        connection,
+        "searchsession",
+        "source_variants",
+        "source_variants TEXT NOT NULL DEFAULT '[]'",
+    )
+    _add_column_if_missing(
+        connection,
+        "searchsession",
+        "source_companies",
+        "source_companies TEXT NOT NULL DEFAULT '[]'",
+    )
 
     if "platform" in columns:
         rows = connection.execute(
@@ -200,6 +228,26 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                 "UPDATE searchsession SET requested_platforms = ? WHERE id = ?",
                 (json.dumps(platforms, ensure_ascii=False), session_id),
             )
+
+    rows = connection.execute(
+        "SELECT id, source_variants, source_companies FROM searchsession"
+    ).fetchall()
+    for session_id, source_variants, source_companies in rows:
+        if source_variants and source_companies:
+            continue
+        connection.execute(
+            """
+            UPDATE searchsession
+            SET source_variants = COALESCE(NULLIF(source_variants, ''), ?),
+                source_companies = COALESCE(NULLIF(source_companies, ''), ?)
+            WHERE id = ?
+            """,
+            (
+                json.dumps([], ensure_ascii=False),
+                json.dumps([], ensure_ascii=False),
+                session_id,
+            ),
+        )
 
 
 def _migrate_application_attempts(connection: sqlite3.Connection) -> None:
