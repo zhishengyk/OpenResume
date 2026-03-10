@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from datetime import datetime
 import json
+import re
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
@@ -247,6 +248,35 @@ def merged_match_response(
     )
 
 
+def _normalize_merge_text(value: str) -> str:
+    if not value:
+        return ""
+    compact = re.sub(r"\s+", " ", value).strip().lower()
+    # Drop punctuation noise so near-identical JD text produces a stable signature.
+    return re.sub(r"[^\w\u4e00-\u9fff]+", "", compact)
+
+
+def _heuristic_merge_key(job: JobListing) -> tuple[str, str, str, str, str, str, str] | None:
+    content_source = job.requirements_text or job.description_text or ""
+    content_signature = _normalize_merge_text(content_source)[:240]
+    if len(content_signature) < 20:
+        return None
+
+    title = _normalize_merge_text(job.title)
+    if not title:
+        return None
+
+    return (
+        job.platform.lower(),
+        job.source_site.lower(),
+        job.source_company.lower(),
+        title,
+        _normalize_merge_text(job.employment_type),
+        _normalize_merge_text(job.department),
+        content_signature,
+    )
+
+
 def attempt_response(attempt: ApplicationAttempt) -> ApplicationAttemptResponse:
     return ApplicationAttemptResponse(
         id=attempt.id,
@@ -286,6 +316,27 @@ def get_app_state(db: SessionDep) -> AppStateResponse:
     return AppStateResponse(**compliance_service.app_state(db))
 
 
+def official_sources_summary() -> str:
+    variant_labels = {
+        "experienced": "社招",
+        "campus": "校招",
+        "internship": "实习",
+    }
+    grouped: dict[str, list[str]] = {}
+    for source in load_sources():
+        grouped.setdefault(source.company_name, [])
+        if source.variant not in grouped[source.company_name]:
+            grouped[source.company_name].append(source.variant)
+    if not grouped:
+        return "代码清单：暂无来源"
+
+    parts: list[str] = []
+    for company_name, variants in grouped.items():
+        labels = [variant_labels.get(variant, variant) for variant in variants]
+        parts.append(f"{company_name}({' + '.join(labels)})")
+    return "代码清单：" + "；".join(parts)
+
+
 def runtime_config_response() -> RuntimeConfigResponse:
     llm_config = runtime_config_service.get_llm_config()
     llm_state = runtime_config_service.llm_runtime_state(llm_config)
@@ -302,7 +353,7 @@ def runtime_config_response() -> RuntimeConfigResponse:
         ),
         openai_base_url=llm_config.openai_base_url,
         openai_model=llm_config.openai_model,
-        official_sources_summary="代码清单：字节跳动社招 + 校招 + 实习",
+        official_sources_summary=official_sources_summary(),
     )
 
 
@@ -580,6 +631,7 @@ def get_search_matches(session_id: str, db: SessionDep):
         for job in db.exec(select(JobListing).where(JobListing.session_id == session_id)).all()
     }
     grouped_index: dict[tuple[str, str, str, str], int] = {}
+    heuristic_grouped_index: dict[tuple[str, str, str, str, str, str, str], int] = {}
     grouped_payload: list[dict] = []
 
     for match in matches:
@@ -617,14 +669,20 @@ def get_search_matches(session_id: str, db: SessionDep):
             job.source_company.lower(),
             normalized_job_id.lower(),
         )
+        heuristic_key = _heuristic_merge_key(job)
 
         existing_index = grouped_index.get(group_key)
+        if existing_index is None and heuristic_key is not None:
+            existing_index = heuristic_grouped_index.get(heuristic_key)
         option_key = (
             (option.location_city or option.location_raw).strip().lower(),
             option.apply_url.strip().lower(),
         )
         if existing_index is None:
-            grouped_index[group_key] = len(grouped_payload)
+            current_index = len(grouped_payload)
+            grouped_index[group_key] = current_index
+            if heuristic_key is not None:
+                heuristic_grouped_index[heuristic_key] = current_index
             grouped_payload.append(
                 {
                     "match": match,

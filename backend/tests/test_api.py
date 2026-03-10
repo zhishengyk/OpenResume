@@ -134,12 +134,21 @@ def variant_draft(
     location_city: str,
     apply_suffix: str,
     title: str = "Senior Frontend Engineer",
+    description_text: str | None = None,
+    requirements_text: str | None = None,
+    employment_type: str | None = None,
 ) -> NormalizedJobDraft:
     draft = sample_draft()
     draft.job_id = job_id
     draft.title = title
     draft.location_city = location_city
     draft.location_raw = location_city
+    if description_text is not None:
+        draft.description_text = description_text
+    if requirements_text is not None:
+        draft.requirements_text = requirements_text
+    if employment_type is not None:
+        draft.employment_type = employment_type
     draft.apply_url = (
         f"https://jobs.bytedance.com/experienced/position/{job_id}/{apply_suffix}"
     )
@@ -183,7 +192,9 @@ def test_runtime_config_exposes_llm_status_without_secrets(client):
     assert payload["llm_configured"] is False
     assert payload["llm_notice"]
     assert "OPENRESUME_OPENAI_API_KEY" in payload["llm_missing_envs"]
-    assert payload["official_sources_summary"] == "代码清单：字节跳动社招 + 校招 + 实习"
+    assert "字节跳动" in payload["official_sources_summary"]
+    assert "腾讯" in payload["official_sources_summary"]
+    assert "\u6dd8\u5b9d" in payload["official_sources_summary"]
     assert payload["openai_api_key_configured"] is False
     assert payload["openai_api_key_preview"] is None
 
@@ -345,11 +356,13 @@ def test_search_matches_do_not_merge_when_job_id_differs(client, monkeypatch):
                 job_id="official-uniq-001",
                 location_city="Hangzhou",
                 apply_suffix="hz",
+                title="Frontend Engineer Platform A",
             ),
             variant_draft(
                 job_id="official-uniq-002",
                 location_city="Beijing",
                 apply_suffix="bj",
+                title="Frontend Engineer Platform B",
             ),
         ]
 
@@ -367,6 +380,91 @@ def test_search_matches_do_not_merge_when_job_id_differs(client, monkeypatch):
     assert all(item["is_merged"] is False for item in payload)
     assert all(item["merged_count"] == 1 for item in payload)
     assert {item["job_id"] for item in payload} == {"official-uniq-001", "official-uniq-002"}
+
+
+def test_search_matches_merge_by_heuristic_when_job_ids_differ(client, monkeypatch):
+    upsert_profile(client)
+
+    async def fake_search_jobs(search, profile):
+        shared_description = (
+            "负责小荷健康业务前端系统建设，参与复杂数据流与组件化架构设计，"
+            "推进性能优化与工程化体系建设，保障跨端一致性与可维护性。"
+        )
+        return [
+            variant_draft(
+                job_id="jd-a-001",
+                location_city="Shenzhen",
+                apply_suffix="sz",
+                title="大模型应用研发工程师-小荷健康",
+                description_text=shared_description,
+                requirements_text="熟悉 Linux，掌握常用数据结构与算法，具备扎实工程能力。",
+                employment_type="Experienced",
+            ),
+            variant_draft(
+                job_id="jd-b-002",
+                location_city="Beijing",
+                apply_suffix="bj",
+                title="大模型应用研发工程师-小荷健康",
+                description_text=shared_description,
+                requirements_text="熟悉 Linux，掌握常用数据结构与算法，具备扎实工程能力。",
+                employment_type="Experienced",
+            ),
+        ]
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+
+    session = create_search_session(client, salary_floor=0, must_have_keywords=[], cities=[])
+    assert session.status_code == 200
+    wait_for_session_status(client, session.json()["id"], "ready")
+
+    response = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert len(payload) == 1
+    assert payload[0]["is_merged"] is True
+    assert payload[0]["merged_count"] == 2
+    assert set(payload[0]["location_cities"]) == {"Shenzhen", "Beijing"}
+
+
+def test_search_matches_do_not_merge_same_title_when_content_differs(client, monkeypatch):
+    upsert_profile(client)
+
+    async def fake_search_jobs(search, profile):
+        return [
+            variant_draft(
+                job_id="jd-c-001",
+                location_city="Shanghai",
+                apply_suffix="sh",
+                title="前端开发工程师-国际支付",
+                description_text="负责支付前端系统搭建，聚焦交易流程与资金安全体验优化。",
+                requirements_text="熟练掌握 JavaScript、TypeScript、React。",
+                employment_type="Internship",
+            ),
+            variant_draft(
+                job_id="jd-d-002",
+                location_city="Beijing",
+                apply_suffix="bj",
+                title="前端开发工程师-国际支付",
+                description_text="负责广告增长平台的投放链路建设，聚焦策略实验与报表分析能力。",
+                requirements_text="熟练掌握 Vue、数据可视化与埋点体系建设。",
+                employment_type="Internship",
+            ),
+        ]
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+
+    session = create_search_session(client, salary_floor=0, must_have_keywords=[], cities=[])
+    assert session.status_code == 200
+    wait_for_session_status(client, session.json()["id"], "ready")
+
+    response = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert len(payload) == 2
+    assert all(item["is_merged"] is False for item in payload)
+    assert all(item["merged_count"] == 1 for item in payload)
 
 
 def test_search_matches_do_not_merge_when_job_id_is_empty(client, monkeypatch):

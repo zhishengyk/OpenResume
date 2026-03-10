@@ -14,6 +14,14 @@ from openresume_api.career_collectors.companies.bytedance import (
     _first_nested_name,
     bytedance_collector,
 )
+from openresume_api.career_collectors.companies.tencent import (
+    TencentCollector,
+    tencent_collector,
+)
+from openresume_api.career_collectors.companies.taobao import (
+    TaobaoCollector,
+    taobao_collector,
+)
 from openresume_api.career_collectors.manifest import filter_sources, load_sources
 from openresume_api.career_collectors.normalization import (
     build_description_html,
@@ -38,12 +46,20 @@ def make_search() -> SearchSessionCreate:
     )
 
 
-def make_source(*, key: str, collector_key: str, variant: str) -> CareerSiteSource:
+def make_source(
+    *,
+    key: str,
+    collector_key: str,
+    variant: str,
+    company_name: str = "ByteDance",
+    entry_url: str = "https://jobs.bytedance.com/",
+    source_site: str = "jobs.bytedance.com",
+) -> CareerSiteSource:
     return CareerSiteSource(
         key=key,
-        company_name="ByteDance",
-        entry_url="https://jobs.bytedance.com/",
-        source_site="jobs.bytedance.com",
+        company_name=company_name,
+        entry_url=entry_url,
+        source_site=source_site,
         collector_key=collector_key,
         variant=variant,
         label=key,
@@ -65,14 +81,23 @@ def make_record(*, job_id: str, title: str = "Frontend Engineer") -> CollectedJo
     )
 
 
-def test_manifest_registers_bytedance_sources():
+def test_manifest_registers_bytedance_and_tencent_sources():
     sources = load_sources()
-    assert [source.key for source in sources] == [
-        "bytedance-experienced",
-        "bytedance-campus",
-        "bytedance-internship",
-    ]
-    assert all(source.collector_key == "bytedance" for source in sources)
+    source_by_key = {source.key: source for source in sources}
+    expected = {
+        "bytedance-experienced": "bytedance",
+        "bytedance-campus": "bytedance",
+        "bytedance-internship": "bytedance",
+        "tencent-experienced": "tencent",
+        "tencent-campus": "tencent",
+        "tencent-internship": "tencent",
+        "taobao-experienced": "taobao",
+        "taobao-campus": "taobao",
+        "taobao-internship": "taobao",
+    }
+    assert expected.keys() <= source_by_key.keys()
+    for key, collector_key in expected.items():
+        assert source_by_key[key].collector_key == collector_key
 
 
 def test_runner_isolates_error_and_missing_collectors():
@@ -368,19 +393,41 @@ class TestFilterSources:
     def test_filters_by_variant(self):
         sources = load_sources()
         filtered = filter_sources(sources, variants=["experienced"])
-        assert len(filtered) == 1
-        assert filtered[0].variant == "experienced"
+        assert len(filtered) >= 3
+        assert all(source.variant == "experienced" for source in filtered)
+        collector_keys = {source.collector_key for source in filtered}
+        assert {"bytedance", "tencent", "taobao"} <= collector_keys
 
     def test_filters_by_company(self):
         sources = load_sources()
         filtered = filter_sources(sources, companies=["字节跳动"])
         assert len(filtered) == 3
+        assert all(source.collector_key == "bytedance" for source in filtered)
+
+    def test_filters_by_tencent_company(self):
+        sources = load_sources()
+        filtered = filter_sources(sources, companies=["腾讯"])
+        assert len(filtered) == 3
+        assert all(source.collector_key == "tencent" for source in filtered)
 
     def test_filters_by_both(self):
         sources = load_sources()
         filtered = filter_sources(sources, variants=["campus"], companies=["字节跳动"])
         assert len(filtered) == 1
         assert filtered[0].variant == "campus"
+
+    def test_filters_tencent_internship(self):
+        sources = load_sources()
+        filtered = filter_sources(sources, variants=["internship"], companies=["腾讯"])
+        assert len(filtered) == 1
+        assert filtered[0].collector_key == "tencent"
+        assert filtered[0].variant == "internship"
+
+    def test_filters_by_taobao_company(self):
+        sources = load_sources()
+        filtered = filter_sources(sources, companies=["淘宝"])
+        assert len(filtered) == 3
+        assert all(source.collector_key == "taobao" for source in filtered)
 
     def test_returns_all_when_no_filters(self):
         sources = load_sources()
@@ -414,3 +461,160 @@ class TestCollectorRunResult:
         assert result.status == "success"
         assert len(result.jobs) == 1
         assert result.duration_ms == 100
+
+
+class TestTencentCollector:
+    def test_collector_key_is_tencent(self):
+        assert tencent_collector.collector_key == "tencent"
+
+    def test_to_record_returns_none_for_missing_job_id(self):
+        collector = TencentCollector()
+        source = make_source(
+            key="test",
+            collector_key="tencent",
+            variant="experienced",
+            company_name="Tencent",
+            entry_url="https://careers.tencent.com/",
+            source_site="careers.tencent.com",
+        )
+        provider = MagicMock()
+        provider.detail_url.return_value = "https://careers.tencent.com/jobdesc.html?postId=1"
+        result = collector._to_record(
+            source,
+            {"PostId": "", "RecruitPostName": "Engineer"},
+            provider=provider,
+            crawl_time=datetime(2026, 3, 10),
+        )
+        assert result is None
+
+    def test_to_record_maps_fields(self):
+        collector = TencentCollector()
+        source = make_source(
+            key="test",
+            collector_key="tencent",
+            variant="experienced",
+            company_name="Tencent",
+            entry_url="https://careers.tencent.com/",
+            source_site="careers.tencent.com",
+        )
+        provider = MagicMock()
+        provider.detail_url.return_value = "https://careers.tencent.com/jobdesc.html?postId=123"
+        result = collector._to_record(
+            source,
+            {
+                "PostId": "123",
+                "RecruitPostName": "Frontend Engineer",
+                "LocationName": "Shanghai",
+                "CategoryName": "技术",
+                "CountryName": "中国",
+                "Responsibility": "Build product",
+                "LastUpdateTime": "2026年03月10日",
+                "PostURL": "http://careers.tencent.com/jobdesc.html?postId=123",
+            },
+            provider=provider,
+            crawl_time=datetime(2026, 3, 10),
+        )
+        assert result is not None
+        assert result.job_id == "123"
+        assert result.title == "Frontend Engineer"
+        assert result.location_raw == "Shanghai"
+        assert result.location_city == "上海"
+        assert result.department == "技术"
+        assert result.description_text == "Build product"
+        assert result.employment_type == "社招"
+        assert result.source_company == "腾讯"
+        assert result.source_site == "careers.tencent.com"
+        assert result.posted_at is not None
+
+    def test_to_record_campus_type(self):
+        collector = TencentCollector()
+        source = make_source(
+            key="test",
+            collector_key="tencent",
+            variant="campus",
+            company_name="Tencent",
+            entry_url="https://careers.tencent.com/",
+            source_site="careers.tencent.com",
+        )
+        provider = MagicMock()
+        provider.detail_url.return_value = "https://careers.tencent.com/jobdesc.html?postId=123"
+        result = collector._to_record(
+            source,
+            {"PostId": "123", "RecruitPostName": "Engineer"},
+            provider=provider,
+            crawl_time=datetime(2026, 3, 10),
+        )
+        assert result is not None
+        assert result.employment_type == "校招"
+
+class TestTaobaoCollector:
+    def test_collector_key_is_taobao(self):
+        assert taobao_collector.collector_key == "taobao"
+
+    def test_to_record_returns_none_for_missing_job_id(self):
+        collector = TaobaoCollector()
+        source = make_source(
+            key="test",
+            collector_key="taobao",
+            variant="experienced",
+            company_name="Taobao",
+            entry_url="https://zhaopin.taobao.com/",
+            source_site="talent.taotian.com",
+        )
+        provider = MagicMock()
+        provider.detail_url.return_value = (
+            "https://talent.taotian.com/off-campus/position-detail?positionId=1"
+        )
+        result = collector._to_record(
+            source,
+            {"id": "", "name": "Engineer"},
+            provider=provider,
+            crawl_time=datetime(2026, 3, 10),
+        )
+        assert result is None
+
+    def test_to_record_maps_fields(self):
+        collector = TaobaoCollector()
+        source = make_source(
+            key="test",
+            collector_key="taobao",
+            variant="internship",
+            company_name="Taobao",
+            entry_url=(
+                "https://talent.taotian.com/campus/position-list"
+                "?campusType=internship&lang=zh"
+            ),
+            source_site="talent.taotian.com",
+        )
+        provider = MagicMock()
+        provider.detail_url.return_value = (
+            "https://talent.taotian.com/campus/position-detail"
+            "?positionId=123&campusType=internship"
+        )
+        result = collector._to_record(
+            source,
+            {
+                "id": "123",
+                "name": "Frontend Engineer",
+                "description": "Build products",
+                "requirement": "React TypeScript",
+                "workLocations": ["Hangzhou", "Beijing"],
+                "categoryName": "Engineering",
+                "publishTime": 1704067200000,
+                "positionUrl": "/campus/position-detail?positionId=123&campusType=internship",
+            },
+            provider=provider,
+            crawl_time=datetime(2026, 3, 10),
+        )
+        assert result is not None
+        assert result.job_id == "123"
+        assert result.title == "Frontend Engineer"
+        assert result.location_raw == "Hangzhou / Beijing"
+        assert result.location_city == "杭州"
+        assert result.department == "Engineering"
+        assert result.description_text == "Build products"
+        assert result.requirements_text == "React TypeScript"
+        assert result.employment_type == "实习"
+        assert result.source_company == "淘宝"
+        assert result.source_site == "talent.taotian.com"
+        assert result.posted_at is not None
