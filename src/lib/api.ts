@@ -13,6 +13,7 @@ import type {
   RuntimeConfig,
   RuntimeConfigUpdatePayload,
   SearchSession,
+  SourceInfo,
   VerificationWindowPayload,
 } from "../types";
 
@@ -151,12 +152,17 @@ export const api = {
     cities: string[];
     salary_floor: number;
     must_have_keywords: string[];
+    source_variants?: string[];
+    source_companies?: string[];
   }) =>
     request<SearchSession>("/api/search-sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
+  getSources: () => request<SourceInfo[]>("/api/sources"),
+  getSourceVariants: () => request<string[]>("/api/sources/variants"),
+  getSourceCompanies: () => request<string[]>("/api/sources/companies"),
   listSearchSessions: () => request<SearchSession[]>("/api/search-sessions"),
   getSearchSession: (id: string) => request<SearchSession>(`/api/search-sessions/${id}`),
   retrySearchSession: (id: string) =>
