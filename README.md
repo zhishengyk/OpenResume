@@ -1,33 +1,177 @@
 # OpenResume
 
-OpenResume is a local desktop job-search workbench built with `Electron + React + FastAPI`.
+> 一套面向近百家大厂招聘官网的本地求职工作台。
 
-## Current Branch State
+OpenResume 是一个基于 `Electron + React + FastAPI` 构建的本地优先桌面应用，用来把简历管理、岗位检索、职位排序、官网账号管理、Agent 投递辅助和面试题知识沉淀，收回到你自己的电脑里。
 
-`main` now exposes only two platform entries:
+它不是简单的岗位聚合器，也不是只会批量海投的脚本集合。  
+它更像一套为高强度求职准备的个人操作系统:
 
-- `official`: connected and selectable; searches official career sites from `url.md`
-- `boss`: visible but disabled; Boss work stays parked on `archive/boss-login`
+- 接入近百家大厂招聘官网，统一管理岗位入口
+- 统一管理招聘官网账号、登录态和投递会话
+- 用 Agent 自动优化简历、匹配岗位并辅助投递
+- 为目标岗位沉淀对应的面试题向量数据库
+- 在本地保留你的简历、搜索历史、投递记录和策略资产
 
-The search pipeline is now:
+如果你要做的不是“找几个岗位网址”，而是“搭一套长期可复用的求职基础设施”，OpenResume 就是这个方向上的答案。
 
-1. Parse official site sources from `url.md`
-2. Fetch official pages
-3. Clean and normalize job candidates in code
-4. Rank cleaned jobs with an OpenAI-compatible model, or explicit heuristic fallback
-5. Launch in-app verification popups for guided apply when login/captcha is required
+## 核心卖点
 
-## Key Behaviors
+### 1. 接入近百家大厂官网
 
-- Platform selection is multi-select on the frontend
-- Disabled platforms remain visible but cannot be checked
-- Search sessions store `requested_platforms`
-- Guided apply uses the uploaded local resume and opens verification inside the app popup
-- If model configuration is missing or model calls fail, the UI shows that results are using heuristic fallback
+OpenResume 以招聘官网为核心数据源，而不是只依赖第三方聚合平台。  
+这意味着你面对的是更直接的岗位来源、更完整的职位信息，以及更可控的投递链路。
 
-## Model Configuration
+招聘官网来源列表统一维护在 `url.md`，覆盖近百家大厂官网入口，并作为平台接入能力的扩展基础。
 
-Set these environment variables to enable OpenAI-compatible ranking:
+你看到的不是零散链接集合，而是一套统一接入、统一清洗、统一排序的招聘官网网络。
+
+### 2. 招聘官网账号统一管理
+
+不同公司的招聘官网、登录方式、会话状态、验证流程长期割裂。  
+OpenResume 把这些账号资产和登录流程纳入同一个桌面工作台管理:
+
+- 官网账号与登录态统一管理
+- 会话状态可复用
+- 遇到验证码、登录确认、人工验证时回到应用内处理
+- 投递过程中的关键步骤可追踪、可继续、可中断
+
+这不是“替你假装成一个浏览器”，而是把复杂的官网操作变成一套可维护的求职基础设施。
+
+### 3. Agent 自动优化简历与投递
+
+OpenResume 不只负责找岗位，还负责把“岗位要求”和“你的材料”放到同一条链路里处理:
+
+- 自动解析简历，生成结构化候选人画像
+- 根据岗位要求做规则筛选与匹配排序
+- 用 Agent 优化简历内容、关键词覆盖和投递策略
+- 按目标岗位给出更贴近需求的投递建议
+
+求职不再只是“投”，而是“分析、调整、再投”。
+
+### 4. 面向岗位的面试题向量数据库
+
+OpenResume 不把投递当作终点，而是把每一次岗位搜索继续沉淀为面试准备资产:
+
+- 按岗位方向沉淀面试题
+- 按公司、部门、职能、技术栈组织知识
+- 构建可检索的向量数据库
+- 让投递结果和面试准备天然连在一起
+
+从岗位发现，到投递，再到面试准备，整条链路会持续积累，而不是每次重新开始。
+
+### 5. 本地优先，而不是把求职资产交给云端
+
+简历、候选人画像、搜索记录、投递尝试、账号状态、策略数据，全部围绕本地存储展开。  
+OpenResume 的目标不是做一个通用 SaaS，而是让高价值的求职资产尽可能留在你自己的设备里。
+
+## OpenResume 在做什么
+
+OpenResume 正在把求职这件事拆成四层能力，并放到同一套系统里:
+
+1. 数据层: 接入近百家大厂官网岗位源
+2. 账号层: 统一管理官网账号、登录态和会话
+3. Agent 层: 自动优化简历、分析匹配、辅助投递
+4. 知识层: 建立对应岗位的面试题向量数据库
+
+这四层组合起来，形成一条完整链路:
+
+```text
+简历导入
+  -> 结构化候选人画像
+  -> 招聘官网检索
+  -> 岗位清洗 / 去重 / 排序
+  -> Agent 优化简历与投递策略
+  -> 官网投递与验证处理
+  -> 面试题向量数据库沉淀
+```
+
+## 你能用它做什么
+
+### 简历与画像管理
+
+- 上传 `PDF` 或 `DOCX` 简历
+- 自动提取姓名、摘要、目标岗位、城市、技能、关键词等字段
+- 手动修正候选人画像
+- 让后续搜索、排序、Agent 分析共享同一份候选人数据
+
+### 岗位检索与排序
+
+- 统一接入招聘官网岗位源
+- 按岗位、城市、薪资、关键词做过滤
+- 对抓取结果进行清洗、标准化、去重
+- 基于规则进行第一轮筛选
+- 基于 LLM 或 Agent 做增强排序和补充分析
+
+### 官网投递管理
+
+- 打开原始官网职位页面
+- 在应用内处理登录、验证码和验证窗口
+- 记录投递尝试和状态变化
+- 支持继续、取消和回看历史链路
+
+### 求职知识沉淀
+
+- 围绕目标岗位建立面试题知识库
+- 把公司、岗位、技能要求和题目组织到同一空间
+- 用向量数据库支持后续检索、复习和针对性准备
+
+## 为什么这个项目值得关注
+
+大多数求职工具只解决一个点:
+
+- 有的只会聚合岗位
+- 有的只会改简历
+- 有的只会做投递脚本
+- 有的只会刷题或做面试题库
+
+OpenResume 解决的是整条链路:
+
+- 从官网岗位源开始
+- 到账号与登录管理
+- 到 Agent 优化简历和投递
+- 再到面试题向量数据库沉淀
+
+它的目标不是做一个单点工具，而是做一套长期可复用、可迭代、可积累的个人求职基础设施。
+
+## 技术栈
+
+- 桌面容器: Electron
+- 前端界面: React + Vite + TypeScript + Tailwind CSS
+- 本地接口: FastAPI + SQLModel
+- 简历解析: `pypdf`、`python-docx`
+- 可选模型接入: OpenAI-compatible API
+
+## 快速开始
+
+### 1. 安装前端依赖
+
+```bash
+npm install
+```
+
+### 2. 安装后端依赖
+
+```bash
+cd backend
+python -m pip install -e .[dev]
+```
+
+后端要求:
+
+- Python `>= 3.11`
+
+### 3. 启动桌面开发环境
+
+```bash
+npm run dev
+```
+
+默认情况下，本地 API 运行在 `127.0.0.1:38417`。
+
+## 可选: 接入模型排序
+
+如果你希望使用 OpenAI-compatible 模型增强职位分析和排序，可以配置下面这些环境变量:
 
 ```bash
 OPENRESUME_LLM_PROVIDER=openai_compatible
@@ -36,38 +180,65 @@ OPENRESUME_OPENAI_API_KEY=your-key
 OPENRESUME_OPENAI_MODEL=your-model-name
 ```
 
-Without these values, the backend falls back to heuristic ranking and returns an explicit degraded-analysis notice to the UI.
+不配置也可以运行。  
+当模型不可用、配置缺失或调用失败时，OpenResume 会自动回退到启发式排序，并在界面上提示当前结果处于降级分析模式。
 
-## Development
-
-Install frontend dependencies:
-
-```bash
-npm install
-```
-
-Install backend dependencies:
+## 常用命令
 
 ```bash
-cd backend
-python -m pip install -e .[dev]
-```
-
-Run the desktop app in development:
-
-```bash
+# 启动桌面开发环境
 npm run dev
-```
 
-Run backend tests:
+# 前端类型检查
+npm run typecheck
 
-```bash
+# 后端测试
 cd backend
 pytest
+
+# 打包 Windows 便携版
+cd ..
+npm run package:windows
 ```
 
-Run frontend type checking:
+## 项目结构
 
-```bash
-npm run typecheck
+```text
+OpenResume/
+├─ src/                         # Electron 前端界面
+├─ electron/                    # Electron 主进程与 preload
+├─ backend/
+│  ├─ openresume_api/           # FastAPI 本地 API
+│  │  ├─ adapters/              # 平台适配器
+│  │  ├─ career_collectors/     # 招聘官网采集器与来源清单
+│  │  ├─ services/              # 搜索、匹配、风控、模型等服务
+│  │  └─ rules/                 # 平台规则包
+│  └─ tests/                    # 后端测试
+├─ scripts/                     # 开发与打包辅助脚本
+└─ url.md                       # 招聘官网来源列表
 ```
+
+## 仓库现状
+
+当前仓库主分支已经打通本地桌面应用的核心骨架，包括:
+
+- 本地简历解析与候选人画像
+- 招聘官网岗位抓取、清洗、排序链路
+- 模型增强排序与降级回退
+- 应用内验证弹窗、投递记录、历史记录、紧急停止开关
+- 平台适配器、规则包、风控和事件流基础设施
+
+主分支当前优先展示 `official` 链路，`boss` 适配器仍保留在仓库中但未启用。  
+这意味着仓库已经具备扩展到更多官网、账号管理、Agent 工作流和面试题知识沉淀的基础结构。
+
+## 适合谁
+
+- 想把求职流程做成“自己的本地工作台”的开发者
+- 想做招聘官网聚合、账号管理和自动化投递系统的人
+- 想把简历优化、岗位匹配、投递执行、面试准备串成一条链路的人
+- 想长期积累自己的求职数据资产，而不是一次性海投的人
+
+## License
+
+仓库当前未提供单独的许可证文件。  
+如果你准备公开发布或接收外部贡献，建议尽快补充明确的 License。
