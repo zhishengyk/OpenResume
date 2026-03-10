@@ -61,6 +61,9 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
         source_companies_expr = (
             "source_companies" if "source_companies" in columns else "NULL"
         )
+        force_refresh_expr = (
+            "force_refresh" if "force_refresh" in columns else "0"
+        )
         rows = connection.execute(
             f"""
             SELECT
@@ -75,6 +78,7 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                 must_have_keywords,
                 {source_variants_expr},
                 {source_companies_expr},
+                {force_refresh_expr},
                 blocked_reason,
                 summary,
                 {analysis_provider_expr},
@@ -98,6 +102,7 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                 must_have_keywords JSON,
                 source_variants JSON,
                 source_companies JSON,
+                force_refresh INTEGER NOT NULL DEFAULT 0,
                 blocked_reason TEXT,
                 summary TEXT,
                 analysis_provider TEXT NOT NULL DEFAULT 'heuristic',
@@ -121,6 +126,7 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                 must_have_keywords,
                 source_variants,
                 source_companies,
+                force_refresh,
                 blocked_reason,
                 summary,
                 analysis_provider,
@@ -146,6 +152,7 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                     must_have_keywords,
                     source_variants,
                     source_companies,
+                    force_refresh,
                     blocked_reason,
                     summary,
                     analysis_provider,
@@ -153,7 +160,7 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                     analysis_notice,
                     created_at,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
@@ -166,6 +173,7 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                     must_have_keywords,
                     source_variants or json.dumps([], ensure_ascii=False),
                     source_companies or json.dumps([], ensure_ascii=False),
+                    force_refresh or 0,
                     blocked_reason,
                     summary,
                     analysis_provider or "heuristic",
@@ -215,6 +223,12 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
         "source_companies",
         "source_companies TEXT NOT NULL DEFAULT '[]'",
     )
+    _add_column_if_missing(
+        connection,
+        "searchsession",
+        "force_refresh",
+        "force_refresh INTEGER NOT NULL DEFAULT 0",
+    )
 
     if "platform" in columns:
         rows = connection.execute(
@@ -248,6 +262,9 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                 session_id,
             ),
         )
+    connection.execute(
+        "UPDATE searchsession SET force_refresh = COALESCE(force_refresh, 0)"
+    )
 
 
 def _migrate_application_attempts(connection: sqlite3.Connection) -> None:
@@ -358,6 +375,20 @@ def _rebuild_derived_tables_if_needed(connection: sqlite3.Connection) -> None:
             "risk_flags",
             "llm_summary",
             "updated_at",
+        },
+    )
+    _drop_table_if_columns_mismatch(
+        connection,
+        "searchfetchcache",
+        {
+            "cache_key",
+            "platforms",
+            "source_filters",
+            "keyword_basis",
+            "payload_json",
+            "created_at",
+            "expires_at",
+            "hit_count",
         },
     )
 

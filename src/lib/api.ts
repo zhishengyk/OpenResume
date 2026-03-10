@@ -154,6 +154,7 @@ export const api = {
     must_have_keywords: string[];
     source_variants?: string[];
     source_companies?: string[];
+    force_refresh?: boolean;
   }) =>
     request<SearchSession>("/api/search-sessions", {
       method: "POST",

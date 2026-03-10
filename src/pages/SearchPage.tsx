@@ -66,6 +66,7 @@ export function SearchPage() {
   const [mustHaveKeywords, setMustHaveKeywords] = useState("");
   const [selectedVariants, setSelectedVariants] = useState<string[]>([]);
   const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
+  const [forceRefresh, setForceRefresh] = useState(false);
   const [filtersCollapsed, setFiltersCollapsed] = useState(initialCollapsedState);
 
   const platformsQuery = useQuery({
@@ -152,6 +153,7 @@ export function SearchPage() {
         must_have_keywords: splitCommaValues(mustHaveKeywords),
         source_variants: selectedVariants.length > 0 ? selectedVariants : undefined,
         source_companies: selectedCompanies.length > 0 ? selectedCompanies : undefined,
+        force_refresh: forceRefresh,
       }),
     onSuccess: (session) => {
       queryClient.invalidateQueries({ queryKey: ["search-sessions"] });
@@ -309,6 +311,14 @@ export function SearchPage() {
             </div>
 
             <div className="mt-6 flex flex-wrap items-center gap-3">
+              <label className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper px-4 py-2 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  checked={forceRefresh}
+                  onChange={(event) => setForceRefresh(event.target.checked)}
+                />
+                强制刷新（跳过缓存）
+              </label>
               {mode === "guided_apply" && !guidedApplyEnabled ? (
                 <button
                   type="button"

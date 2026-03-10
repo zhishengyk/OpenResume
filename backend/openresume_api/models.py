@@ -50,6 +50,7 @@ class SearchSession(SQLModel, table=True):
     must_have_keywords: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     source_variants: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     source_companies: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    force_refresh: bool = False
     blocked_reason: str | None = None
     summary: str | None = None
     analysis_provider: str = "heuristic"
@@ -150,3 +151,17 @@ class LLMAnalysisCache(SQLModel, table=True):
     risk_flags: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     llm_summary: str = ""
     updated_at: datetime = Field(default_factory=now_utc)
+
+
+class SearchFetchCache(SQLModel, table=True):
+    cache_key: str = Field(primary_key=True)
+    platforms: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    source_filters: dict[str, list[str]] = Field(
+        default_factory=dict,
+        sa_column=Column(JSON),
+    )
+    keyword_basis: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    payload_json: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=now_utc)
+    expires_at: datetime = Field(default_factory=now_utc)
+    hit_count: int = 0

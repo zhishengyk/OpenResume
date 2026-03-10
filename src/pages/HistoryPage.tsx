@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertOctagon } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { StatusPill } from "../components/StatusPill";
 import { api } from "../lib/api";
 import { modeLabel, pillLabel } from "../lib/utils";
@@ -17,6 +18,7 @@ async function openVerificationPopup(url: string, title: string) {
 }
 
 export function HistoryPage() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const sessionsQuery = useQuery({
     queryKey: ["search-sessions"],
@@ -107,7 +109,16 @@ export function HistoryPage() {
                       </p>
                     ) : null}
                   </div>
-                  <StatusPill>{session.status}</StatusPill>
+                  <div className="flex items-center gap-3">
+                    <StatusPill>{session.status}</StatusPill>
+                    <button
+                      type="button"
+                      className="rounded-full border border-ink/10 bg-shell px-4 py-2 text-sm font-semibold text-ink transition hover:bg-paper"
+                      onClick={() => navigate(`/results?session=${session.id}`)}
+                    >
+                      查看结果
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

@@ -444,6 +444,7 @@ async def create_search_session(payload: SearchSessionCreate, db: SessionDep):
         must_have_keywords=payload.must_have_keywords,
         source_variants=payload.source_variants,
         source_companies=payload.source_companies,
+        force_refresh=payload.force_refresh,
     )
     return await search_service.create_session(db, normalized_payload)
 

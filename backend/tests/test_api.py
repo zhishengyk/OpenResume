@@ -1,8 +1,10 @@
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
+from openresume_api import db as db_module
 from openresume_api.adapters.base import NormalizedJobDraft, PlatformBlockedError
 from openresume_api.adapters.official import official_adapter
+from openresume_api.models import SearchFetchCache
 from openresume_api.services.llm import (
     AnalysisBatch,
     AnalysisMetadata,
@@ -11,6 +13,7 @@ from openresume_api.services.llm import (
     llm_service,
 )
 from openresume_api.services.runtime_config import runtime_config_service
+from sqlmodel import Session, select
 
 
 def wait_for_session_status(client, session_id: str, expected: str, timeout: float = 5.0):
@@ -59,18 +62,28 @@ def create_search_session(
     cities: list[str] | None = None,
     salary_floor: int = 25000,
     must_have_keywords: list[str] | None = None,
+    force_refresh: bool = False,
 ):
     return client.post(
         "/api/search-sessions",
         json={
-            "platforms": platforms or ["official"],
+            "platforms": ["official"] if platforms is None else platforms,
             "mode": mode,
-            "job_targets": job_targets or ["Frontend Engineer", "Full Stack Engineer"],
-            "cities": cities or ["Shanghai", "Hangzhou"],
+            "job_targets": (
+                ["Frontend Engineer", "Full Stack Engineer"]
+                if job_targets is None
+                else job_targets
+            ),
+            "cities": ["Shanghai", "Hangzhou"] if cities is None else cities,
             "salary_floor": salary_floor,
-            "must_have_keywords": must_have_keywords or ["React", "TypeScript"],
-            "source_variants": source_variants or [],
-            "source_companies": source_companies or [],
+            "must_have_keywords": (
+                ["React", "TypeScript"]
+                if must_have_keywords is None
+                else must_have_keywords
+            ),
+            "source_variants": [] if source_variants is None else source_variants,
+            "source_companies": [] if source_companies is None else source_companies,
+            "force_refresh": force_refresh,
         },
     )
 
@@ -337,6 +350,7 @@ def test_search_session_persists_source_filters_and_retry_reuses_them(client, mo
         client,
         source_variants=["campus", "internship"],
         source_companies=["字节跳动"],
+        force_refresh=True,
     )
     assert session.status_code == 200
     session_id = session.json()["id"]
@@ -347,6 +361,7 @@ def test_search_session_persists_source_filters_and_retry_reuses_them(client, mo
     payload = latest.json()
     assert payload["source_variants"] == ["campus", "internship"]
     assert payload["source_companies"] == ["字节跳动"]
+    assert payload["force_refresh"] is True
 
     retry = client.post(f"/api/search-sessions/{session_id}/retry")
     assert retry.status_code == 200
@@ -355,6 +370,97 @@ def test_search_session_persists_source_filters_and_retry_reuses_them(client, mo
     assert len(observed) >= 2
     assert observed[0] == (["campus", "internship"], ["字节跳动"])
     assert observed[1] == (["campus", "internship"], ["字节跳动"])
+
+
+def test_search_fetch_cache_hit_reuses_previous_payload(client, monkeypatch):
+    upsert_profile(client)
+    call_count = {"value": 0}
+
+    async def fake_search_jobs(search, profile):
+        call_count["value"] += 1
+        return [sample_draft()]
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+
+    first = create_search_session(client, cities=[], salary_floor=0, must_have_keywords=[])
+    assert first.status_code == 200
+    wait_for_session_status(client, first.json()["id"], "ready")
+    first_matches = client.get(f"/api/search-sessions/{first.json()['id']}/matches").json()
+
+    second = create_search_session(client, cities=[], salary_floor=0, must_have_keywords=[])
+    assert second.status_code == 200
+    wait_for_session_status(client, second.json()["id"], "ready")
+    second_matches = client.get(f"/api/search-sessions/{second.json()['id']}/matches").json()
+
+    assert call_count["value"] == 1
+    assert len(first_matches) == 1
+    assert len(second_matches) == 1
+    assert first_matches[0]["job_id"] == second_matches[0]["job_id"]
+    assert first_matches[0]["title"] == second_matches[0]["title"]
+    assert first_matches[0]["location_city"] == second_matches[0]["location_city"]
+    assert first_matches[0]["apply_url"] == second_matches[0]["apply_url"]
+
+    with Session(db_module.engine) as db:
+        cache_row = db.exec(select(SearchFetchCache)).first()
+        assert cache_row is not None
+        assert cache_row.hit_count >= 1
+
+
+def test_search_fetch_cache_force_refresh_bypasses_cache(client, monkeypatch):
+    upsert_profile(client)
+    call_count = {"value": 0}
+
+    async def fake_search_jobs(search, profile):
+        call_count["value"] += 1
+        return [sample_draft()]
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+
+    first = create_search_session(client, cities=[], salary_floor=0, must_have_keywords=[])
+    assert first.status_code == 200
+    wait_for_session_status(client, first.json()["id"], "ready")
+
+    second = create_search_session(
+        client,
+        cities=[],
+        salary_floor=0,
+        must_have_keywords=[],
+        force_refresh=True,
+    )
+    assert second.status_code == 200
+    wait_for_session_status(client, second.json()["id"], "ready")
+
+    assert call_count["value"] == 2
+    detail = client.get(f"/api/search-sessions/{second.json()['id']}").json()
+    assert detail["force_refresh"] is True
+
+
+def test_search_fetch_cache_expires_and_refetches(client, monkeypatch):
+    upsert_profile(client)
+    call_count = {"value": 0}
+
+    async def fake_search_jobs(search, profile):
+        call_count["value"] += 1
+        return [sample_draft()]
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+
+    first = create_search_session(client, cities=[], salary_floor=0, must_have_keywords=[])
+    assert first.status_code == 200
+    wait_for_session_status(client, first.json()["id"], "ready")
+
+    with Session(db_module.engine) as db:
+        cache_row = db.exec(select(SearchFetchCache)).first()
+        assert cache_row is not None
+        cache_row.expires_at = datetime.utcnow() - timedelta(seconds=1)
+        db.add(cache_row)
+        db.commit()
+
+    second = create_search_session(client, cities=[], salary_floor=0, must_have_keywords=[])
+    assert second.status_code == 200
+    wait_for_session_status(client, second.json()["id"], "ready")
+
+    assert call_count["value"] == 2
 
 
 def test_search_pipeline_is_not_capped_to_twenty_matches(client, monkeypatch):

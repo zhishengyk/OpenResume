@@ -71,6 +71,7 @@ export interface SearchSession {
   must_have_keywords: string[];
   source_variants: string[];
   source_companies: string[];
+  force_refresh: boolean;
   created_at: string;
   updated_at: string;
   blocked_reason?: string | null;
