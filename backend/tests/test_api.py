@@ -125,7 +125,7 @@ def test_runtime_config_exposes_llm_status_without_secrets(client):
     assert payload["llm_configured"] is False
     assert payload["llm_notice"]
     assert "OPENRESUME_OPENAI_API_KEY" in payload["llm_missing_envs"]
-    assert payload["official_sources_summary"] == "代码清单：字节跳动社招 + 校招"
+    assert payload["official_sources_summary"] == "代码清单：字节跳动社招 + 校招 + 实习"
     assert payload["openai_api_key_configured"] is False
     assert payload["openai_api_key_preview"] is None
 
