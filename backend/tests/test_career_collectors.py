@@ -65,11 +65,12 @@ def make_record(*, job_id: str, title: str = "Frontend Engineer") -> CollectedJo
     )
 
 
-def test_manifest_only_registers_bytedance_sources():
+def test_manifest_registers_bytedance_sources():
     sources = load_sources()
     assert [source.key for source in sources] == [
         "bytedance-experienced",
         "bytedance-campus",
+        "bytedance-internship",
     ]
     assert all(source.collector_key == "bytedance" for source in sources)
 
@@ -330,6 +331,22 @@ class TestBytedanceCollector:
         assert result is not None
         assert result.employment_type == "校招"
 
+    def test_to_record_uses_internship_variant(self):
+        collector = BytedanceCollector()
+        source = make_source(key="test", collector_key="bytedance", variant="internship")
+        provider = MagicMock()
+        provider.detail_url.return_value = "https://jobs.bytedance.com/campus/position/123/detail"
+
+        result = collector._to_record(
+            source,
+            {"id": "123", "title": "Engineer"},
+            provider=provider,
+            crawl_time=datetime(2026, 3, 10),
+        )
+
+        assert result is not None
+        assert result.employment_type == "实习"
+
     def test_to_record_falls_back_to_location_field(self):
         collector = BytedanceCollector()
         source = make_source(key="test", collector_key="bytedance", variant="experienced")
@@ -373,7 +390,7 @@ class TestFilterSources:
     def test_filters_by_company(self):
         sources = load_sources()
         filtered = filter_sources(sources, companies=["字节跳动"])
-        assert len(filtered) == 2
+        assert len(filtered) == 3
 
     def test_filters_by_both(self):
         sources = load_sources()
