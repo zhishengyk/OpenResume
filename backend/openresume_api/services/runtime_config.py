@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import json
 import time
-from pathlib import Path
 
 import httpx
 
@@ -133,20 +132,20 @@ class RuntimeConfigService:
                 effective_provider="openai_compatible",
                 configured=True,
                 missing_fields=[],
-                notice="已启用 OpenAI-compatible 大模型排序。",
+                notice="已启用 OpenAI 兼容模型排序。",
             )
         if llm_config.llm_provider == "openai_compatible":
             return LLMRuntimeState(
                 effective_provider="openai_compatible",
                 configured=False,
                 missing_fields=missing_fields,
-                notice="已选择 OpenAI-compatible 排序，但缺少必要配置。搜索不会再自动降级到 heuristic，请先补齐配置。",
+                notice="已选择 OpenAI 兼容模型排序，但缺少必要配置。请先补全配置后再测试。",
             )
         return LLMRuntimeState(
             effective_provider="heuristic",
             configured=False,
             missing_fields=missing_fields,
-            notice="当前未启用大模型，岗位会使用规则/heuristic 排序。",
+            notice="当前未启用大模型，岗位会使用规则/启发式排序。",
         )
 
     async def list_models(self, config: LLMRuntimeConfig) -> list[str]:

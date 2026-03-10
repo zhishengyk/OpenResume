@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, RefreshCw, ShieldCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { AlertTriangle, ChevronLeft, ChevronRight, RefreshCw, ShieldCheck } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { MatchCard } from "../components/MatchCard";
 import { MetricCard } from "../components/MetricCard";
@@ -10,6 +10,8 @@ import { useEventStream } from "../hooks/useEventStream";
 import { api } from "../lib/api";
 import { pillLabel } from "../lib/utils";
 import type { SearchEvent } from "../types";
+
+const PAGE_SIZE = 20;
 
 async function openVerificationPopup(url: string, title: string) {
   if (window.openResumeDesktop?.openVerificationWindow) {
@@ -27,10 +29,12 @@ export function ResultsPage() {
   const [params] = useSearchParams();
   const queryClient = useQueryClient();
   const [events, setEvents] = useState<SearchEvent[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
   const sessionId = params.get("session") || undefined;
 
   useEffect(() => {
     setEvents([]);
+    setCurrentPage(1);
   }, [sessionId]);
 
   const sessionQuery = useQuery({
@@ -62,6 +66,7 @@ export function ResultsPage() {
     mutationFn: () => api.retrySearchSession(sessionId!),
     onSuccess: () => {
       setEvents([]);
+      setCurrentPage(1);
       queryClient.invalidateQueries({ queryKey: ["search-session", sessionId] });
       queryClient.invalidateQueries({ queryKey: ["search-matches", sessionId] });
     },
@@ -85,16 +90,30 @@ export function ResultsPage() {
   const isBlocked = sessionQuery.data?.status === "blocked";
   const isRunning = sessionQuery.data?.status === "running";
 
+  const paginatedMatches = useMemo(() => {
+    const matches = matchesQuery.data || [];
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return matches.slice(start, start + PAGE_SIZE);
+  }, [matchesQuery.data, currentPage]);
+
+  const totalPages = useMemo(() => {
+    const total = matchesQuery.data?.length || 0;
+    return Math.ceil(total / PAGE_SIZE);
+  }, [matchesQuery.data]);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   return (
     <div className="space-y-6">
       <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.24em] text-slate">
-              搜索任务
-            </p>
+            <p className="text-xs uppercase tracking-[0.24em] text-slate">搜索任务</p>
             <h1 className="mt-3 font-display text-5xl text-ink">
-              先做代码清洗，再做模型精排，最后进入官网流程。
+              先清洗，再排序，最后再打开官网职位页面。
             </h1>
           </div>
           {sessionQuery.data ? <StatusPill>{sessionQuery.data.status}</StatusPill> : null}
@@ -123,10 +142,10 @@ export function ResultsPage() {
                 需要验证
               </p>
               <h2 className="mt-3 font-display text-3xl text-ink">
-                先在小窗里完成验证，再继续当前搜索流程。
+                请先在弹窗里完成验证，然后继续这次搜索。
               </h2>
               <p className="mt-3 text-sm leading-7 text-slate">
-                {sessionQuery.data?.blocked_reason || "当前搜索因为平台要求人工验证而暂停。"}
+                {sessionQuery.data?.blocked_reason || "平台要求人工验证后才能继续。"}
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -137,7 +156,7 @@ export function ResultsPage() {
                 disabled={openVerificationMutation.isPending || !sessionId}
               >
                 <ShieldCheck size={16} />
-                {openVerificationMutation.isPending ? "正在打开小窗..." : "打开验证小窗"}
+                {openVerificationMutation.isPending ? "正在打开..." : "打开验证弹窗"}
               </button>
               <button
                 type="button"
@@ -146,7 +165,7 @@ export function ResultsPage() {
                 disabled={retrySearchMutation.isPending || !sessionId}
               >
                 <RefreshCw size={16} />
-                {retrySearchMutation.isPending ? "正在重试..." : "验证后继续"}
+                {retrySearchMutation.isPending ? "正在重试..." : "重试搜索"}
               </button>
             </div>
           </div>
@@ -155,36 +174,95 @@ export function ResultsPage() {
 
       <section className="grid gap-4 lg:grid-cols-3">
         <MetricCard
-          label="可见岗位"
+          label="可见职位"
           value={String(matchesQuery.data?.length ?? 0)}
-          hint="只有通过代码清洗的岗位才会进入结果列表。"
+          hint="只有通过代码清洗的职位才会显示在这里。"
         />
         <MetricCard
-          label="搜索平台"
+          label="已选平台"
           value={
             sessionQuery.data?.requested_platforms
               ?.map((platform) => pillLabel(platform))
-              .join("、") || "--"
+              .join(", ") || "--"
           }
-          hint="搜索任务会记录本次勾选的所有平台。"
+          hint="搜索任务会记录本次选择的所有平台。"
         />
         <MetricCard
-          label="分析来源"
+          label="分析提供方"
           value={sessionQuery.data ? pillLabel(sessionQuery.data.analysis_provider) : "--"}
-          hint="如果降级到规则模式，这里会明确提示。"
+          hint="如果大模型排序降级，这里会显示实际使用的提供方。"
         />
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
         <Timeline events={events} />
         <div className="space-y-5">
-          {matchesQuery.data?.length ? (
-            matchesQuery.data.map((match) => (
-              <MatchCard key={match.id} match={match} />
-            ))
+          {paginatedMatches.length ? (
+            <>
+              {paginatedMatches.map((match) => (
+                <MatchCard key={match.id} match={match} />
+              ))}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 pt-4">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-full border border-ink/10 bg-shell px-4 py-2 text-sm font-medium text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-40"
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage <= 1}
+                  >
+                    <ChevronLeft size={16} />
+                    上一页
+                  </button>
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let page: number;
+                      if (totalPages <= 5) {
+                        page = i + 1;
+                      } else if (currentPage <= 3) {
+                        page = i + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        page = totalPages - 4 + i;
+                      } else {
+                        page = currentPage - 2 + i;
+                      }
+                      return (
+                        <button
+                          key={page}
+                          type="button"
+                          className={`h-9 w-9 rounded-full text-sm font-medium transition ${
+                            page === currentPage
+                              ? "bg-ink text-shell"
+                              : "border border-ink/10 bg-shell text-ink hover:bg-paper"
+                          }`}
+                          onClick={() => handlePageChange(page)}
+                        >
+                          {page}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-full border border-ink/10 bg-shell px-4 py-2 text-sm font-medium text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-40"
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage >= totalPages}
+                  >
+                    下一页
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              )}
+              {totalPages > 1 && (
+                <p className="text-center text-sm text-slate">
+                  第 {currentPage} / {totalPages} 页，共 {matchesQuery.data?.length || 0} 条职位
+                </p>
+              )}
+            </>
           ) : (
             <div className="rounded-[32px] border border-ink/10 bg-shell/90 p-8 text-sm leading-7 text-slate shadow-console">
-              {isRunning ? "代码清洗完成后，岗位会显示在这里。" : "当前任务还没有可展示的岗位。"}
+              {isRunning
+                ? "职位抓取和清洗完成后会显示在这里。"
+                : "当前搜索任务还没有可显示的职位。"}
             </div>
           )}
         </div>

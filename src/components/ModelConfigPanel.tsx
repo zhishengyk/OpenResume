@@ -1,14 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  Bot,
-  Check,
-  KeyRound,
-  ListRestart,
-  Save,
-  Search,
-  Wifi,
-  X,
-} from "lucide-react";
+import { Bot, KeyRound, ListRestart, Save, Search, Wifi, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { cn } from "../lib/utils";
@@ -58,13 +49,11 @@ function ModelPickerDialog({
     if (!open) {
       return;
     }
-
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         onClose();
       }
     };
-
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose, open]);
@@ -92,14 +81,10 @@ function ModelPickerDialog({
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.22em] text-slate">
-              模型列表
-            </p>
-            <h3 className="mt-2 font-display text-3xl text-ink">
-              选择要使用的模型
-            </h3>
+            <p className="text-xs uppercase tracking-[0.22em] text-slate">模型列表</p>
+            <h3 className="mt-2 font-display text-3xl text-ink">选择排序模型</h3>
             <p className="mt-3 text-sm leading-7 text-slate">
-              已获取 {models.length} 个模型。列表支持滚轮滚动，也可以先搜索再选择。
+              已加载 {models.length} 个模型。可以筛选后再选择。
             </p>
           </div>
           <button
@@ -113,15 +98,13 @@ function ModelPickerDialog({
         </div>
 
         <label className="mt-5 block space-y-2">
-          <span className="text-xs uppercase tracking-[0.2em] text-slate">
-            搜索模型
-          </span>
+          <span className="text-xs uppercase tracking-[0.2em] text-slate">筛选</span>
           <div className="flex items-center gap-3 rounded-2xl border border-ink/10 bg-paper px-4 py-3">
             <Search size={16} className="text-slate" />
             <input
               value={filter}
               onChange={(event) => onFilterChange(event.target.value)}
-              placeholder="输入模型名关键字，例如 qwen、gpt、deepseek"
+              placeholder="搜索模型名，例如 qwen、gpt 或 deepseek"
               className="w-full bg-transparent text-sm text-ink outline-none"
             />
           </div>
@@ -144,9 +127,7 @@ function ModelPickerDialog({
                     )}
                     onClick={() => onSelect(model)}
                   >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">{model}</p>
-                    </div>
+                    <p className="truncate text-sm font-semibold">{model}</p>
                     <span
                       className={cn(
                         "ml-4 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
@@ -155,14 +136,14 @@ function ModelPickerDialog({
                           : "border-ink/15 bg-paper text-transparent",
                       )}
                     >
-                      <Check size={12} />
+                      <Bot size={12} />
                     </span>
                   </button>
                 );
               })
             ) : (
               <div className="rounded-2xl border border-dashed border-ink/15 bg-shell px-4 py-8 text-center text-sm leading-7 text-slate">
-                没有匹配当前关键字的模型。你可以修改搜索词，或者关闭弹层后手动输入模型名。
+                当前筛选条件下没有匹配的模型。
               </div>
             )}
           </div>
@@ -170,7 +151,7 @@ function ModelPickerDialog({
 
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-slate">
-            当前选择：{selectedModel || "尚未选择模型"}
+            已选择：{selectedModel || "尚未选择模型"}
           </p>
           <div className="flex flex-wrap gap-3">
             <button
@@ -230,7 +211,6 @@ export function ModelConfigPanel({ runtimeConfig }: ModelConfigPanelProps) {
     if (!availableModels.length) {
       return;
     }
-
     setPickerSelection(
       availableModels.includes(draft.openai_model)
         ? draft.openai_model
@@ -244,11 +224,7 @@ export function ModelConfigPanel({ runtimeConfig }: ModelConfigPanelProps) {
     if (!pickerSelection) {
       return;
     }
-
-    setDraft((current) => ({
-      ...current,
-      openai_model: pickerSelection,
-    }));
+    setDraft((current) => ({ ...current, openai_model: pickerSelection }));
     setTestSummary(`已选择模型：${pickerSelection}`);
     setModelPickerOpen(false);
   };
@@ -291,7 +267,7 @@ export function ModelConfigPanel({ runtimeConfig }: ModelConfigPanelProps) {
       setModelPickerOpen(result.models.length > 0);
       setTestSummary(
         result.models.length > 0
-          ? `${result.message} 已打开模型选择窗口。`
+          ? `${result.message} 已打开模型列表。`
           : result.message,
       );
     },
@@ -303,17 +279,13 @@ export function ModelConfigPanel({ runtimeConfig }: ModelConfigPanelProps) {
       const latencyText =
         typeof result.latency_ms === "number" ? `，耗时 ${result.latency_ms} ms` : "";
       const previewText = result.reply_preview
-        ? `，返回示例：${result.reply_preview}`
+        ? `，返回预览：${result.reply_preview}`
         : "";
       setTestSummary(`${result.message}${latencyText}${previewText}`);
     },
   });
 
-  const actionError =
-    saveMutation.error ||
-    fetchModelsMutation.error ||
-    testMutation.error;
-
+  const actionError = saveMutation.error || fetchModelsMutation.error || testMutation.error;
   const openAIFieldsDisabled = draft.llm_provider !== "openai_compatible";
 
   return (
@@ -321,34 +293,27 @@ export function ModelConfigPanel({ runtimeConfig }: ModelConfigPanelProps) {
       <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.24em] text-slate">
-              模型配置
-            </p>
+            <p className="text-xs uppercase tracking-[0.24em] text-slate">模型配置</p>
             <h2 className="mt-3 font-display text-4xl text-ink">
-              在前端直接配置排序模型，并测试连通性。
+              在界面里配置排序模型，并直接测试连通性。
             </h2>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-slate">
-              这里参考了 AstrBot 的做法：把配置、模型列表拉取和连接测试拆开处理。保存后会写入本地运行时配置，不会把原始 API Key 回显到前端。
+              保存后的值会写入本地运行时配置。原始 API Key 不会回传到前端。
+              当前官网来源：{runtimeConfig.official_sources_summary}。
             </p>
           </div>
           <div className="rounded-[24px] border border-ink/10 bg-paper px-5 py-4">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate">
-              当前状态
-            </p>
-            <p className="mt-2 font-semibold text-ink">
-              {runtimeConfig.llm_notice}
-            </p>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate">当前状态</p>
+            <p className="mt-2 font-semibold text-ink">{runtimeConfig.llm_notice}</p>
             <p className="mt-2 text-sm text-slate">
-              生效提供商：{runtimeConfig.llm_effective_provider}
+              生效提供方：{runtimeConfig.llm_effective_provider}
             </p>
           </div>
         </div>
 
         <div className="mt-6 grid gap-5 md:grid-cols-2">
           <label className="space-y-2">
-            <span className="text-xs uppercase tracking-[0.2em] text-slate">
-              排序提供商
-            </span>
+            <span className="text-xs uppercase tracking-[0.2em] text-slate">提供方</span>
             <select
               value={draft.llm_provider}
               onChange={(event) =>
@@ -359,15 +324,13 @@ export function ModelConfigPanel({ runtimeConfig }: ModelConfigPanelProps) {
               }
               className="w-full rounded-2xl border border-ink/10 bg-paper px-4 py-3 text-sm text-ink outline-none transition focus:border-ink/30"
             >
-              <option value="heuristic">heuristic 规则降级</option>
-              <option value="openai_compatible">OpenAI-compatible</option>
+              <option value="heuristic">启发式</option>
+              <option value="openai_compatible">OpenAI 兼容</option>
             </select>
           </label>
 
           <label className="space-y-2">
-            <span className="text-xs uppercase tracking-[0.2em] text-slate">
-              模型接口地址
-            </span>
+            <span className="text-xs uppercase tracking-[0.2em] text-slate">接口地址</span>
             <input
               value={draft.openai_base_url}
               onChange={(event) =>
@@ -383,9 +346,7 @@ export function ModelConfigPanel({ runtimeConfig }: ModelConfigPanelProps) {
           </label>
 
           <label className="space-y-2">
-            <span className="text-xs uppercase tracking-[0.2em] text-slate">
-              模型名称
-            </span>
+            <span className="text-xs uppercase tracking-[0.2em] text-slate">模型名</span>
             <input
               value={draft.openai_model}
               onChange={(event) =>
@@ -401,8 +362,8 @@ export function ModelConfigPanel({ runtimeConfig }: ModelConfigPanelProps) {
             <div className="flex items-center justify-between gap-3 text-xs text-slate">
               <span>
                 {availableModels.length
-                  ? `已获取 ${availableModels.length} 个模型，可以从弹层里选择。`
-                  : "可以直接手动输入模型名。"}
+                  ? `已加载 ${availableModels.length} 个模型。`
+                  : "也可以手动直接输入模型名。"}
               </span>
               <button
                 type="button"
@@ -416,9 +377,7 @@ export function ModelConfigPanel({ runtimeConfig }: ModelConfigPanelProps) {
           </label>
 
           <label className="space-y-2">
-            <span className="text-xs uppercase tracking-[0.2em] text-slate">
-              API Key
-            </span>
+            <span className="text-xs uppercase tracking-[0.2em] text-slate">API Key</span>
             <input
               type="password"
               value={draft.openai_api_key}
@@ -434,7 +393,7 @@ export function ModelConfigPanel({ runtimeConfig }: ModelConfigPanelProps) {
               disabled={openAIFieldsDisabled}
               placeholder={
                 runtimeConfig.openai_api_key_configured
-                  ? "留空则保留当前已保存密钥"
+                  ? "留空则继续使用已保存的 Key"
                   : "输入新的 API Key"
               }
               className="w-full rounded-2xl border border-ink/10 bg-paper px-4 py-3 text-sm text-ink outline-none transition focus:border-ink/30 disabled:cursor-not-allowed disabled:bg-paper/70"
@@ -446,8 +405,8 @@ export function ModelConfigPanel({ runtimeConfig }: ModelConfigPanelProps) {
           <div className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper px-4 py-2">
             <KeyRound size={14} />
             {runtimeConfig.openai_api_key_configured
-              ? `已保存密钥：${runtimeConfig.openai_api_key_preview}`
-              : "当前未保存密钥"}
+              ? `已保存 Key：${runtimeConfig.openai_api_key_preview}`
+              : "尚未保存 Key"}
           </div>
           <label className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper px-4 py-2 text-ink">
             <input
@@ -456,9 +415,9 @@ export function ModelConfigPanel({ runtimeConfig }: ModelConfigPanelProps) {
               onChange={(event) => setClearSavedApiKey(event.target.checked)}
               disabled={!runtimeConfig.openai_api_key_configured || openAIFieldsDisabled}
             />
-            清空已保存密钥
+            清除已保存 Key
           </label>
-          <span>官网源文件：{runtimeConfig.official_source_file}</span>
+          <span>官网来源：{runtimeConfig.official_sources_summary}</span>
         </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
@@ -469,7 +428,7 @@ export function ModelConfigPanel({ runtimeConfig }: ModelConfigPanelProps) {
             disabled={saveMutation.isPending}
           >
             <Save size={16} />
-            {saveMutation.isPending ? "正在保存..." : "保存配置"}
+            {saveMutation.isPending ? "保存中..." : "保存配置"}
           </button>
           <button
             type="button"
@@ -478,7 +437,7 @@ export function ModelConfigPanel({ runtimeConfig }: ModelConfigPanelProps) {
             disabled={fetchModelsMutation.isPending || openAIFieldsDisabled}
           >
             <ListRestart size={16} />
-            {fetchModelsMutation.isPending ? "正在获取模型..." : "获取模型列表"}
+            {fetchModelsMutation.isPending ? "加载模型中..." : "拉取模型列表"}
           </button>
           <button
             type="button"
@@ -487,7 +446,7 @@ export function ModelConfigPanel({ runtimeConfig }: ModelConfigPanelProps) {
             disabled={testMutation.isPending || openAIFieldsDisabled}
           >
             <Wifi size={16} />
-            {testMutation.isPending ? "正在测试..." : "测试模型连接"}
+            {testMutation.isPending ? "测试中..." : "测试连接"}
           </button>
         </div>
 
@@ -502,25 +461,6 @@ export function ModelConfigPanel({ runtimeConfig }: ModelConfigPanelProps) {
             {extractError(actionError)}
           </div>
         ) : null}
-
-        {draft.llm_provider === "heuristic" ? (
-          <div className="mt-5 rounded-[24px] border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-7 text-ink">
-            当前选择的是 `heuristic`，搜索仍然可用，但岗位排序不会调用真实大模型。
-          </div>
-        ) : null}
-
-        <div className="mt-5 rounded-[24px] border border-ink/10 bg-paper p-4">
-          <p className="flex items-center gap-2 text-sm font-semibold text-ink">
-            <Bot size={16} />
-            使用说明
-          </p>
-          <div className="mt-3 space-y-2 text-sm leading-7 text-slate">
-            <p>1. 先填写接口地址和 API Key，再点击“获取模型列表”。</p>
-            <p>2. 获取成功后会弹出模型窗口，你可以滚动浏览、搜索并勾选模型。</p>
-            <p>3. “测试模型连接”会主动调用一次 `chat/completions`，可能产生少量 token 消耗。</p>
-            <p>4. 保存后的配置会写入本地运行时配置文件，后续搜索直接复用。</p>
-          </div>
-        </div>
       </section>
 
       <ModelPickerDialog

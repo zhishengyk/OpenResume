@@ -22,7 +22,7 @@ class AnalysisMetadata:
 @dataclass
 class LLMResult:
     cache_key: str
-    external_job_id: str
+    job_id: str
     llm_score: float
     highlights: list[str]
     missing_keywords: list[str]
@@ -44,6 +44,19 @@ class LLMConfigurationError(RuntimeError):
     pass
 
 
+def job_content_hash(job: JobListing) -> str:
+    payload = "\n".join(
+        [
+            job.source_site,
+            job.job_id,
+            job.title,
+            job.description_text,
+            job.requirements_text,
+        ]
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 class LLMProvider(Protocol):
     name: str
     metadata: AnalysisMetadata
@@ -54,7 +67,13 @@ class LLMProvider(Protocol):
         jobs: Iterable[JobListing],
     ) -> list[LLMResult]: ...
 
-    def cache_key(self, platform: str, external_job_id: str, jd_hash: str) -> str: ...
+    def cache_key(
+        self,
+        platform: str,
+        source_site: str,
+        job_id: str,
+        content_hash: str,
+    ) -> str: ...
 
 
 class HeuristicLLMProvider:
@@ -65,11 +84,17 @@ class HeuristicLLMProvider:
             provider=self.name,
             degraded=True,
             notice=notice
-            or "Using heuristic analysis only. Configure an OpenAI-compatible model for full ranking.",
+            or "当前仅使用规则/启发式分析。配置 OpenAI 兼容模型后可启用完整排序。",
         )
 
-    def cache_key(self, platform: str, external_job_id: str, jd_hash: str) -> str:
-        value = f"{self.name}:{platform}:{external_job_id}:{jd_hash}"
+    def cache_key(
+        self,
+        platform: str,
+        source_site: str,
+        job_id: str,
+        content_hash: str,
+    ) -> str:
+        value = f"{self.name}:{platform}:{source_site}:{job_id}:{content_hash}"
         return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
     async def analyze(
@@ -78,47 +103,59 @@ class HeuristicLLMProvider:
         jobs: Iterable[JobListing],
     ) -> list[LLMResult]:
         results: list[LLMResult] = []
-        candidate_keywords = {
-            skill.lower() for skill in profile.skills + profile.must_have_keywords
-        }
         target_roles = {role.lower() for role in profile.target_roles}
 
         for job in jobs:
+            combined_text = "\n".join(
+                [job.title, job.description_text, job.requirements_text]
+            ).lower()
             overlap = sorted(
                 {
                     skill
                     for skill in profile.skills + profile.must_have_keywords
-                    if skill.lower() in job.jd_text.lower()
+                    if skill.lower() in combined_text
                 }
             )
             missing = sorted(
                 {
                     keyword
                     for keyword in profile.must_have_keywords
-                    if keyword.lower() not in job.jd_text.lower()
+                    if keyword.lower() not in combined_text
                 }
             )
-            role_bonus = 8 if any(role in job.title.lower() for role in target_roles) else 0
+            role_bonus = (
+                8
+                if any(
+                    role in job.title.lower() or role in combined_text
+                    for role in target_roles
+                )
+                else 0
+            )
             score = min(100.0, 55.0 + len(overlap) * 7 + role_bonus - len(missing) * 4)
 
             risk_flags: list[str] = []
             if job.salary_min and profile.salary_floor and job.salary_min < profile.salary_floor:
-                risk_flags.append("salary below target")
-            if "leader" in job.jd_text.lower() or "带团队" in job.jd_text:
-                risk_flags.append("management responsibility")
-            if "onsite" in job.work_mode.lower():
-                risk_flags.append("onsite preference")
+                risk_flags.append("薪资低于预期")
+            if "leader" in combined_text or "team lead" in combined_text:
+                risk_flags.append("可能包含管理职责")
+            if job.remote_type.lower() == "onsite":
+                risk_flags.append("需要现场办公")
 
             summary = (
-                f"Matched on {', '.join(overlap[:4]) or 'general engineering fit'}. "
-                f"Watch for {', '.join((missing + risk_flags)[:3]) or 'no major hard blockers detected'}."
+                f"匹配亮点：{', '.join(overlap[:4]) or '整体工程方向匹配'}。"
+                f"需要关注：{', '.join((missing + risk_flags)[:3]) or '暂未发现明显硬性阻塞项'}。"
             )
             results.append(
                 LLMResult(
-                    cache_key=self.cache_key(job.platform, job.external_job_id, job.jd_hash),
-                    external_job_id=job.external_job_id,
+                    cache_key=self.cache_key(
+                        job.platform,
+                        job.source_site,
+                        job.job_id,
+                        job_content_hash(job),
+                    ),
+                    job_id=job.job_id,
                     llm_score=score,
-                    highlights=overlap[:5] or list(candidate_keywords)[:3],
+                    highlights=overlap[:5],
                     missing_keywords=missing[:4],
                     risk_flags=risk_flags[:4],
                     llm_summary=summary,
@@ -141,14 +178,24 @@ class OpenAICompatibleLLMProvider:
             notice=None,
         )
 
-    def cache_key(self, platform: str, external_job_id: str, jd_hash: str) -> str:
+    def cache_key(
+        self,
+        platform: str,
+        source_site: str,
+        job_id: str,
+        content_hash: str,
+    ) -> str:
         value = (
             f"{self.name}:{self.config.openai_base_url}:{self.config.openai_model}:"
-            f"{platform}:{external_job_id}:{jd_hash}"
+            f"{platform}:{source_site}:{job_id}:{content_hash}"
         )
         return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
-    def _build_prompt(self, profile: CandidateProfile, jobs: list[JobListing]) -> list[dict]:
+    def _build_prompt(
+        self,
+        profile: CandidateProfile,
+        jobs: list[JobListing],
+    ) -> list[dict]:
         profile_blob = {
             "headline": profile.headline,
             "summary": profile.summary[:1000],
@@ -161,37 +208,31 @@ class OpenAICompatibleLLMProvider:
         }
         jobs_blob = [
             {
-                "external_job_id": job.external_job_id,
+                "job_id": job.job_id,
                 "platform": job.platform,
+                "source_company": job.source_company,
+                "source_site": job.source_site,
                 "title": job.title,
-                "company_name": job.company_name,
-                "city": job.city,
-                "salary_text": job.salary_text,
+                "department": job.department,
+                "employment_type": job.employment_type,
+                "location_city": job.location_city,
+                "location_country": job.location_country,
+                "remote_type": job.remote_type,
+                "salary_raw": job.salary_raw,
                 "salary_min": job.salary_min,
                 "salary_max": job.salary_max,
-                "experience_text": job.experience_text,
-                "degree_text": job.degree_text,
-                "work_mode": job.work_mode,
-                "department": (job.raw_payload or {}).get("department", ""),
-                "location_text": (job.raw_payload or {}).get("location_text", ""),
-                "responsibilities": ((job.raw_payload or {}).get("detail_sections") or {}).get(
-                    "responsibilities",
-                    "",
-                )[:1200],
-                "requirements": ((job.raw_payload or {}).get("detail_sections") or {}).get(
-                    "requirements",
-                    "",
-                )[:1200],
-                "jd_text": job.jd_text[:3000],
+                "description_text": job.description_text[:2200],
+                "requirements_text": job.requirements_text[:2200],
+                "skills_extracted": job.skills_extracted,
             }
             for job in jobs
         ]
         instruction = (
             "You are ranking official career-site job listings for a candidate. "
             "Return strict JSON with shape "
-            "{\"results\": [{\"external_job_id\": str, \"llm_score\": number, "
-            "\"highlights\": [str], \"missing_keywords\": [str], "
-            "\"risk_flags\": [str], \"llm_summary\": str}]}. "
+            '{"results": [{"job_id": str, "llm_score": number, '
+            '"highlights": [str], "missing_keywords": [str], '
+            '"risk_flags": [str], "llm_summary": str}]}. '
             "Scores must be 0-100. Only use information present in the candidate profile and cleaned job payload. "
             "Do not speculate about missing page data or invent fields."
         )
@@ -238,27 +279,33 @@ class OpenAICompatibleLLMProvider:
             response.raise_for_status()
             data = response.json()
 
-        content = (
-            data.get("choices", [{}])[0]
-            .get("message", {})
-            .get("content", "")
-        )
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
         parsed = self._extract_json(content)
         items = parsed.get("results", [])
-        results_by_job = {item.get("external_job_id"): item for item in items if item.get("external_job_id")}
+        results_by_job = {
+            item.get("job_id"): item for item in items if item.get("job_id")
+        }
 
         results: list[LLMResult] = []
         for job in job_list:
-            item = results_by_job.get(job.external_job_id, {})
+            item = results_by_job.get(job.job_id, {})
             llm_score = float(item.get("llm_score", 65.0))
             highlights = [str(value) for value in item.get("highlights", [])][:5]
             missing = [str(value) for value in item.get("missing_keywords", [])][:4]
             risk_flags = [str(value) for value in item.get("risk_flags", [])][:4]
-            summary = str(item.get("llm_summary", "")).strip() or "Model ranked this role from the cleaned official JD."
+            summary = (
+                str(item.get("llm_summary", "")).strip()
+                or "Model ranked this role from the cleaned official payload."
+            )
             results.append(
                 LLMResult(
-                    cache_key=self.cache_key(job.platform, job.external_job_id, job.jd_hash),
-                    external_job_id=job.external_job_id,
+                    cache_key=self.cache_key(
+                        job.platform,
+                        job.source_site,
+                        job.job_id,
+                        job_content_hash(job),
+                    ),
+                    job_id=job.job_id,
                     llm_score=max(0.0, min(100.0, llm_score)),
                     highlights=highlights,
                     missing_keywords=missing,
@@ -291,7 +338,10 @@ class LLMService:
         results: list[LLMResult] = []
         fresh_jobs: list[JobListing] = []
         for job in jobs:
-            cache_key = provider.cache_key(job.platform, job.external_job_id, job.jd_hash)
+            content_hash = job_content_hash(job)
+            cache_key = provider.cache_key(
+                job.platform, job.source_site, job.job_id, content_hash
+            )
             cached = db.get(LLMAnalysisCache, cache_key)
             if not cached:
                 fresh_jobs.append(job)
@@ -299,7 +349,7 @@ class LLMService:
             results.append(
                 LLMResult(
                     cache_key=cache_key,
-                    external_job_id=job.external_job_id,
+                    job_id=job.job_id,
                     llm_score=cached.llm_score,
                     highlights=list(cached.highlights),
                     missing_keywords=list(cached.missing_keywords),
@@ -325,8 +375,9 @@ class LLMService:
                 cache_key=result.cache_key,
                 provider=provider.metadata.provider,
                 platform=job.platform,
-                external_job_id=job.external_job_id,
-                jd_hash=job.jd_hash,
+                source_site=job.source_site,
+                job_id=job.job_id,
+                content_hash=job_content_hash(job),
                 llm_score=result.llm_score,
                 highlights=result.highlights,
                 missing_keywords=result.missing_keywords,
@@ -348,11 +399,26 @@ class LLMService:
 
         provider = self._primary_provider()
         cached_results, fresh_jobs = self._cached_results(db, provider, jobs)
-        fresh_results = await provider.analyze(profile, fresh_jobs) if fresh_jobs else []
-        if fresh_results:
-            self._persist_results(db, provider, fresh_jobs, fresh_results)
+        
+        fresh_results: list[LLMResult] = []
+        final_metadata = provider.metadata
+        if fresh_jobs:
+            try:
+                fresh_results = await provider.analyze(profile, fresh_jobs)
+                if fresh_results:
+                    self._persist_results(db, provider, fresh_jobs, fresh_results)
+            except Exception as error:
+                fallback = HeuristicLLMProvider(
+                    notice=f"LLM 调用失败，已降级到规则分析。错误：{error}"
+                )
+                fresh_results = await fallback.analyze(profile, fresh_jobs)
+                for result in fresh_results:
+                    result.analysis_degraded = True
+                    result.analysis_notice = fallback.metadata.notice
+                final_metadata = fallback.metadata
+        
         return AnalysisBatch(
-            metadata=provider.metadata,
+            metadata=final_metadata,
             results=cached_results + fresh_results,
         )
 

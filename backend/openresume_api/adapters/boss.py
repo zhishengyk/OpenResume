@@ -22,12 +22,12 @@ class BossAdapter:
             session_supported=False,
             session_required=False,
             selectable=False,
-            disabled_reason="Boss integration is parked on archive/boss-login.",
+            disabled_reason="当前版本未启用 Boss 直聘接入。",
             rule_pack_version=rule_pack_service.current_version(self.platform),
         )
 
     async def start_session(self, db: Session) -> None:
-        raise RuntimeError("Boss is disabled on the main branch.")
+        raise RuntimeError("当前版本未启用 Boss 直聘。")
 
     async def session_state(self, db: Session) -> dict:
         return {
@@ -42,17 +42,17 @@ class BossAdapter:
         search: SearchSessionCreate,
         profile: CandidateProfile,
     ) -> list:
-        raise PlatformDataError("Boss is disabled on the main branch.")
+        raise PlatformDataError("当前版本未启用 Boss 直聘。")
 
     async def open_review(self, url: str) -> str:
-        raise RuntimeError("Boss review is not available on the main branch.")
+        raise RuntimeError("当前版本不支持 Boss 页面查看。")
 
     async def guided_apply(
         self,
         job: JobListing,
         profile: CandidateProfile,
     ) -> GuidedApplyOutcome:
-        raise RuntimeError("Boss guided apply is not available on the main branch.")
+        raise RuntimeError("当前版本不支持 Boss 引导投递。")
 
 
 boss_adapter = BossAdapter()

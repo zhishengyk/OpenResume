@@ -22,17 +22,20 @@ class Settings:
     openai_base_url: str | None = os.getenv("OPENRESUME_OPENAI_BASE_URL", None)
     openai_api_key: str | None = os.getenv("OPENRESUME_OPENAI_API_KEY", None)
     openai_model: str | None = os.getenv("OPENRESUME_OPENAI_MODEL", None)
-    official_source_file: Path = Path(
-        os.getenv("OPENRESUME_OFFICIAL_SOURCE_FILE", str(PROJECT_ROOT / "url.md"))
-    )
     official_request_timeout_seconds: float = float(
         os.getenv("OPENRESUME_OFFICIAL_REQUEST_TIMEOUT_SECONDS", "12")
     )
-    official_source_limit: int = int(
-        os.getenv("OPENRESUME_OFFICIAL_SOURCE_LIMIT", "10")
-    )
     official_job_limit_per_source: int = int(
-        os.getenv("OPENRESUME_OFFICIAL_JOB_LIMIT_PER_SOURCE", "4")
+        os.getenv("OPENRESUME_OFFICIAL_JOB_LIMIT_PER_SOURCE", "400")
+    )
+    official_company_worker_count: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_COMPANY_WORKER_COUNT", "4")
+    )
+    official_bytedance_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_BYTEDANCE_PAGE_LIMIT", "8")
+    )
+    official_bytedance_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_BYTEDANCE_PAGE_SIZE", "100")
     )
     disable_browser_open: bool = (
         os.getenv("OPENRESUME_DISABLE_BROWSER_OPEN", "0") == "1"

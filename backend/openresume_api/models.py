@@ -61,23 +61,27 @@ class JobListing(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
     session_id: str = Field(index=True)
     platform: str
-    external_job_id: str
+    source_company: str
+    source_site: str
+    job_id: str
     title: str
-    company_name: str
-    city: str
-    salary_text: str
-    salary_min: int = 0
-    salary_max: int = 0
-    experience_text: str = ""
-    degree_text: str = ""
-    work_mode: str = ""
-    url: str
-    detail_url: str | None = None
-    apply_url: str | None = None
-    source_company_url: str | None = None
-    apply_requires_login: bool = False
-    jd_text: str
-    jd_hash: str
+    department: str = ""
+    employment_type: str = ""
+    location_raw: str = ""
+    location_city: str = ""
+    location_country: str = ""
+    remote_type: str = "unknown"
+    description_html: str = ""
+    description_text: str = ""
+    requirements_text: str = ""
+    skills_extracted: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    posted_at: datetime | None = None
+    apply_url: str = ""
+    salary_raw: str = ""
+    salary_min: int | None = None
+    salary_max: int | None = None
+    lang: str = "zh-CN"
+    crawl_time: datetime = Field(default_factory=now_utc)
     raw_payload: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=now_utc)
 
@@ -135,8 +139,9 @@ class LLMAnalysisCache(SQLModel, table=True):
     cache_key: str = Field(primary_key=True)
     provider: str = "heuristic"
     platform: str
-    external_job_id: str
-    jd_hash: str
+    source_site: str
+    job_id: str
+    content_hash: str
     llm_score: float
     highlights: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     missing_keywords: list[str] = Field(default_factory=list, sa_column=Column(JSON))

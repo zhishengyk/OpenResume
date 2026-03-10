@@ -71,24 +71,30 @@ class SearchEventPayload(BaseModel):
 
 class JobMatchResponse(BaseModel):
     id: str
-    job_id: str
+    listing_id: str
     platform: str
-    external_job_id: str
+    job_id: str
+    source_company: str
+    source_site: str
     title: str
-    company_name: str
-    city: str
-    salary_text: str
-    experience_text: str
-    degree_text: str
-    work_mode: str
-    url: str
-    detail_url: str | None
-    apply_url: str | None
-    source_company_url: str | None
-    apply_requires_login: bool
+    department: str
+    employment_type: str
+    location_raw: str
+    location_city: str
+    location_country: str
+    remote_type: str
+    description_html: str
+    description_text: str
+    requirements_text: str
+    skills_extracted: list[str]
+    posted_at: datetime | None
+    apply_url: str
+    salary_raw: str
+    salary_min: int | None
+    salary_max: int | None
+    lang: str
+    crawl_time: datetime
     apply_supported: bool
-    jd_text: str
-    jd_excerpt: str
     rule_score: float
     llm_score: float | None
     final_score: float
@@ -110,7 +116,7 @@ class VerificationWindowResponse(BaseModel):
 
 class ApplicationAttemptResponse(BaseModel):
     id: str
-    job_id: str
+    listing_id: str
     platform: str
     mode: str
     status: str
@@ -139,7 +145,7 @@ class RuntimeConfigResponse(BaseModel):
     openai_api_key_preview: str | None
     openai_base_url: str | None
     openai_model: str | None
-    official_source_file: str
+    official_sources_summary: str
 
 
 class RuntimeConfigUpdateRequest(BaseModel):

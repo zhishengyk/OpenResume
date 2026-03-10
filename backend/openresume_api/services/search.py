@@ -64,7 +64,7 @@ class SearchService:
             cities=payload.cities,
             salary_floor=payload.salary_floor,
             must_have_keywords=payload.must_have_keywords,
-            summary="Search started. Official pages are being cleaned before model ranking.",
+            summary="搜索已开始，正在抓取并清洗官网职位。",
         )
         db.add(session)
         db.commit()
@@ -80,22 +80,22 @@ class SearchService:
             blocked_at=None,
             last_retry_at=None,
         )
-        event_bus.publish(session.id, "search_started", "Search session created.")
+        event_bus.publish(session.id, "search_started", "搜索任务已创建。")
         asyncio.create_task(self._run_pipeline(session.id, payload))
         return session
 
     async def retry_session(self, db: Session, session_id: str) -> SearchSession:
         session = db.get(SearchSession, session_id)
         if not session:
-            raise HTTPException(status_code=404, detail="Search session not found.")
+            raise HTTPException(status_code=404, detail="未找到搜索任务。")
         if session.status == "running":
-            raise HTTPException(status_code=409, detail="Search session is already running.")
+            raise HTTPException(status_code=409, detail="搜索任务仍在运行中。")
 
         meta = self._get_session_meta(db, session_id)
         retry_count = int(meta.get("retry_count") or 0) + 1
         session.status = "running"
         session.blocked_reason = None
-        session.summary = "Retrying this search session."
+        session.summary = "正在重试本次搜索。"
         session.updated_at = datetime.utcnow()
         db.add(session)
         db.commit()
@@ -113,7 +113,7 @@ class SearchService:
         event_bus.publish(
             session_id,
             "search_restarted",
-            f"Retry #{retry_count} started.",
+            f"第 {retry_count} 次重试已开始。",
             {"retry_count": retry_count},
         )
         asyncio.create_task(self._run_pipeline(session.id, self._payload_from_session(session)))
@@ -122,12 +122,12 @@ class SearchService:
     async def reopen_verification(self, db: Session, session_id: str) -> dict[str, str]:
         session = db.get(SearchSession, session_id)
         if not session:
-            raise HTTPException(status_code=404, detail="Search session not found.")
+            raise HTTPException(status_code=404, detail="未找到搜索任务。")
 
         meta = self._get_session_meta(db, session_id)
         verification_url = meta.get("verification_url")
         if not verification_url:
-            raise HTTPException(status_code=409, detail="This search session does not have a verification URL.")
+            raise HTTPException(status_code=409, detail="当前搜索任务没有可重新打开的验证窗口。")
 
         self._set_session_meta(
             db,
@@ -138,12 +138,12 @@ class SearchService:
         event_bus.publish(
             session_id,
             "verification_opened",
-            "Verification window can be reopened in-app.",
+            "验证窗口已可在应用内重新打开。",
         )
         return {
             "url": str(verification_url),
-            "title": str(meta.get("verification_title") or "Search verification"),
-            "message": "Open the verification window, complete the challenge, then retry.",
+            "title": str(meta.get("verification_title") or "搜索验证"),
+            "message": "请打开验证窗口完成验证，然后再重试搜索。",
         }
 
     async def _fetch_platform_jobs(
@@ -164,7 +164,7 @@ class SearchService:
             return drafts
         raise HTTPException(
             status_code=503,
-            detail="; ".join(errors) or "No jobs could be collected from the selected platforms.",
+            detail="；".join(errors) or "所选平台暂时没有抓取到可用职位。",
         )
 
     async def _run_pipeline(self, session_id: str, payload: SearchSessionCreate) -> None:
@@ -178,10 +178,10 @@ class SearchService:
                 event_bus.publish(
                     session_id,
                     "fetching_jobs",
-                    "Fetching official sites and applying code-based cleaning.",
+                    "正在抓取官网职位并进行代码级清洗。",
                 )
                 raw_jobs = await self._fetch_platform_jobs(payload, profile)
-                official_stats = {}
+                official_stats: dict[str, int] = {}
                 for platform in payload.platforms:
                     adapter = platform_gateway.get(platform)
                     stats = getattr(adapter, "last_run_stats", None)
@@ -193,16 +193,16 @@ class SearchService:
                         session_id,
                         "code_cleaned",
                         (
-                            "Official cleanup stats: "
-                            f"{official_stats.get('sources_selected', 0)} sites, "
-                            f"{official_stats.get('entry_candidates', 0)} candidates, "
-                            f"{official_stats.get('hard_filtered', 0)} hard-filtered, "
-                            f"{official_stats.get('detail_dropped', 0)} detail-dropped, "
-                            f"{official_stats.get('quality_penalized', 0)} penalized, "
-                            f"{official_stats.get('final_model_candidates', 0)} ready for ranking."
+                            "采集统计："
+                            f"{official_stats.get('sources_selected', 0)} 个来源，"
+                            f"{official_stats.get('sources_with_jobs', 0)} 个有职位，"
+                            f"{official_stats.get('source_errors', 0)} 个报错，"
+                            f"{official_stats.get('jobs_before_dedupe', 0)} 条原始职位，"
+                            f"{official_stats.get('jobs_after_dedupe', 0)} 条进入排序。"
                         ),
                         official_stats,
                     )
+
                 rule_matches = matching_service.filter_and_score(
                     profile=profile,
                     drafts=raw_jobs,
@@ -224,23 +224,27 @@ class SearchService:
                     job = JobListing(
                         session_id=session_id,
                         platform=draft.raw_payload.get("platform", payload.platforms[0]),
-                        external_job_id=draft.external_job_id,
+                        source_company=draft.source_company,
+                        source_site=draft.source_site,
+                        job_id=draft.job_id,
                         title=draft.title,
-                        company_name=draft.company_name,
-                        city=draft.city,
-                        salary_text=draft.salary_text,
+                        department=draft.department,
+                        employment_type=draft.employment_type,
+                        location_raw=draft.location_raw,
+                        location_city=draft.location_city,
+                        location_country=draft.location_country,
+                        remote_type=draft.remote_type,
+                        description_html=draft.description_html,
+                        description_text=draft.description_text,
+                        requirements_text=draft.requirements_text,
+                        skills_extracted=draft.skills_extracted,
+                        posted_at=draft.posted_at,
+                        apply_url=draft.apply_url,
+                        salary_raw=draft.salary_raw,
                         salary_min=draft.salary_min,
                         salary_max=draft.salary_max,
-                        experience_text=draft.experience_text,
-                        degree_text=draft.degree_text,
-                        work_mode=draft.work_mode,
-                        url=draft.url,
-                        detail_url=draft.detail_url or draft.url,
-                        apply_url=draft.apply_url,
-                        source_company_url=draft.source_company_url,
-                        apply_requires_login=draft.apply_requires_login,
-                        jd_text=draft.jd_text,
-                        jd_hash=draft.jd_hash,
+                        lang=draft.lang,
+                        crawl_time=draft.crawl_time or datetime.utcnow(),
                         raw_payload=draft.raw_payload,
                     )
                     db.add(job)
@@ -265,13 +269,13 @@ class SearchService:
                 event_bus.publish(
                     session_id,
                     "rule_ranked",
-                    f"Code cleaning and rule ranking kept {len(stored_jobs)} jobs.",
+                    f"清洗和规则排序后保留了 {len(stored_jobs)} 条职位。",
                     {"matches": len(stored_jobs)},
                 )
 
                 analysis_batch = await llm_service.analyze_jobs(db, profile, stored_jobs)
                 llm_by_job = {
-                    result.external_job_id: result
+                    result.job_id: result
                     for result in analysis_batch.results
                 }
                 provider = analysis_batch.metadata.provider
@@ -279,7 +283,7 @@ class SearchService:
                 notice = analysis_batch.metadata.notice
 
                 for job, match in zip(stored_jobs, stored_matches, strict=True):
-                    llm_result = llm_by_job.get(job.external_job_id)
+                    llm_result = llm_by_job.get(job.job_id)
                     if llm_result:
                         match.llm_score = llm_result.llm_score
                         match.final_score = round(
@@ -309,7 +313,7 @@ class SearchService:
                 session.status = "ready"
                 session.updated_at = datetime.utcnow()
                 session.blocked_reason = None
-                session.summary = "Search complete. Jobs were cleaned in code before ranking."
+                session.summary = "搜索完成，职位已清洗并排序。"
                 session.analysis_provider = provider
                 session.analysis_degraded = degraded
                 session.analysis_notice = notice
@@ -327,7 +331,7 @@ class SearchService:
                 event_bus.publish(
                     session_id,
                     "llm_enriched",
-                    f"Ranking finished with provider {provider}.",
+                    f"排序已完成，分析提供方：{provider}。",
                     {
                         "matches": len(stored_jobs),
                         "analysis_provider": provider,
@@ -335,7 +339,7 @@ class SearchService:
                         "analysis_notice": notice,
                     },
                 )
-                event_bus.publish(session_id, "ready", "Search session is ready.")
+                event_bus.publish(session_id, "ready", "搜索任务已完成。")
             except PlatformBlockedError as error:
                 detail = str(error)
                 verification_url = error.verification_url
@@ -351,7 +355,7 @@ class SearchService:
                     session_id,
                     retryable=True,
                     verification_url=verification_url,
-                    verification_title="Search verification",
+                    verification_title="搜索验证",
                     blocked_at=datetime.utcnow().isoformat(),
                     verification_opened_at=None,
                 )
@@ -371,7 +375,7 @@ class SearchService:
                     },
                 )
             except Exception as error:
-                detail = str(error) or "Search session failed."
+                detail = str(error) or "搜索任务失败。"
                 db.exec(delete(JobMatch).where(JobMatch.session_id == session_id))
                 db.exec(delete(JobListing).where(JobListing.session_id == session_id))
                 db.commit()

@@ -3,11 +3,12 @@ import type { SearchEvent } from "../types";
 function eventTypeLabel(type: string) {
   const mapping: Record<string, string> = {
     search_started: "任务创建",
-    search_restarted: "重试搜索",
-    fetching_jobs: "抓取岗位",
-    rule_ranked: "规则筛选",
+    search_restarted: "重新搜索",
+    fetching_jobs: "抓取职位",
+    code_cleaned: "代码清洗",
+    rule_ranked: "规则排序",
     llm_enriched: "模型补充",
-    verification_opened: "打开验证页",
+    verification_opened: "打开验证",
     blocked: "平台阻塞",
     failed: "任务失败",
     ready: "任务完成",
@@ -24,9 +25,7 @@ export function Timeline({ events }: TimelineProps) {
   return (
     <div className="rounded-[28px] border border-ink/10 bg-shell/90 p-5 shadow-console">
       <div className="flex items-center justify-between">
-        <p className="text-xs uppercase tracking-[0.22em] text-slate">
-          搜索时间线
-        </p>
+        <p className="text-xs uppercase tracking-[0.22em] text-slate">搜索时间线</p>
         <p className="text-xs text-slate">{events.length} 条事件</p>
       </div>
       <div className="mt-5 space-y-4">
@@ -44,8 +43,7 @@ export function Timeline({ events }: TimelineProps) {
             <div>
               <p className="text-sm font-semibold text-ink">{event.message}</p>
               <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate">
-                {eventTypeLabel(event.type)} ·{" "}
-                {new Date(event.timestamp).toLocaleTimeString()}
+                {eventTypeLabel(event.type)} | {new Date(event.timestamp).toLocaleTimeString()}
               </p>
             </div>
           </div>

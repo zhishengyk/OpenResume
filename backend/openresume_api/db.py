@@ -202,53 +202,6 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
             )
 
 
-def _migrate_job_listings(connection: sqlite3.Connection) -> None:
-    if not _table_columns(connection, "joblisting"):
-        return
-
-    _add_column_if_missing(connection, "joblisting", "detail_url", "detail_url TEXT")
-    _add_column_if_missing(connection, "joblisting", "apply_url", "apply_url TEXT")
-    _add_column_if_missing(
-        connection,
-        "joblisting",
-        "source_company_url",
-        "source_company_url TEXT",
-    )
-    _add_column_if_missing(
-        connection,
-        "joblisting",
-        "apply_requires_login",
-        "apply_requires_login INTEGER NOT NULL DEFAULT 0",
-    )
-    connection.execute(
-        "UPDATE joblisting SET detail_url = url WHERE detail_url IS NULL OR detail_url = ''"
-    )
-
-
-def _migrate_job_matches(connection: sqlite3.Connection) -> None:
-    if not _table_columns(connection, "jobmatch"):
-        return
-
-    _add_column_if_missing(
-        connection,
-        "jobmatch",
-        "analysis_provider",
-        "analysis_provider TEXT NOT NULL DEFAULT 'heuristic'",
-    )
-    _add_column_if_missing(
-        connection,
-        "jobmatch",
-        "analysis_degraded",
-        "analysis_degraded INTEGER NOT NULL DEFAULT 0",
-    )
-    _add_column_if_missing(
-        connection,
-        "jobmatch",
-        "analysis_notice",
-        "analysis_notice TEXT",
-    )
-
-
 def _migrate_application_attempts(connection: sqlite3.Connection) -> None:
     if not _table_columns(connection, "applicationattempt"):
         return
@@ -259,7 +212,12 @@ def _migrate_application_attempts(connection: sqlite3.Connection) -> None:
         "verification_url",
         "verification_url TEXT",
     )
-    _add_column_if_missing(connection, "applicationattempt", "launch_url", "launch_url TEXT")
+    _add_column_if_missing(
+        connection,
+        "applicationattempt",
+        "launch_url",
+        "launch_url TEXT",
+    )
     _add_column_if_missing(
         connection,
         "applicationattempt",
@@ -268,14 +226,91 @@ def _migrate_application_attempts(connection: sqlite3.Connection) -> None:
     )
 
 
-def _migrate_llm_cache(connection: sqlite3.Connection) -> None:
-    if not _table_columns(connection, "llmanalysiscache"):
+def _drop_table_if_columns_mismatch(
+    connection: sqlite3.Connection,
+    table_name: str,
+    expected_columns: set[str],
+) -> None:
+    columns = _table_columns(connection, table_name)
+    if not columns:
         return
-    _add_column_if_missing(
+    if columns == expected_columns:
+        return
+    connection.execute(f"DROP TABLE {table_name}")
+
+
+def _rebuild_derived_tables_if_needed(connection: sqlite3.Connection) -> None:
+    _drop_table_if_columns_mismatch(
+        connection,
+        "jobmatch",
+        {
+            "id",
+            "session_id",
+            "job_id",
+            "rule_score",
+            "llm_score",
+            "final_score",
+            "highlights",
+            "missing_keywords",
+            "risk_flags",
+            "llm_summary",
+            "cached_llm",
+            "analysis_provider",
+            "analysis_degraded",
+            "analysis_notice",
+            "created_at",
+            "updated_at",
+        },
+    )
+    _drop_table_if_columns_mismatch(
+        connection,
+        "joblisting",
+        {
+            "id",
+            "session_id",
+            "platform",
+            "source_company",
+            "source_site",
+            "job_id",
+            "title",
+            "department",
+            "employment_type",
+            "location_raw",
+            "location_city",
+            "location_country",
+            "remote_type",
+            "description_html",
+            "description_text",
+            "requirements_text",
+            "skills_extracted",
+            "posted_at",
+            "apply_url",
+            "salary_raw",
+            "salary_min",
+            "salary_max",
+            "lang",
+            "crawl_time",
+            "raw_payload",
+            "created_at",
+        },
+    )
+    _drop_table_if_columns_mismatch(
         connection,
         "llmanalysiscache",
-        "provider",
-        "provider TEXT NOT NULL DEFAULT 'heuristic'",
+        {
+            "cache_key",
+            "provider",
+            "platform",
+            "source_site",
+            "job_id",
+            "content_hash",
+            "llm_score",
+            "highlights",
+            "missing_keywords",
+            "risk_flags",
+            "llm_summary",
+            "updated_at",
+        },
     )
 
 
@@ -284,10 +319,8 @@ def run_compat_migrations() -> None:
     connection = sqlite3.connect(settings.database_path)
     try:
         _migrate_search_sessions(connection)
-        _migrate_job_listings(connection)
-        _migrate_job_matches(connection)
         _migrate_application_attempts(connection)
-        _migrate_llm_cache(connection)
+        _rebuild_derived_tables_if_needed(connection)
         connection.commit()
     finally:
         connection.close()

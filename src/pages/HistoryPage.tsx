@@ -65,12 +65,8 @@ export function HistoryPage() {
           <div className="flex items-start gap-3">
             <AlertOctagon className="mt-1 text-ember" size={20} />
             <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-ember">
-                紧急停止
-              </p>
-              <p className="mt-3 font-display text-4xl text-ink">
-                立即暂停所有引导动作
-              </p>
+              <p className="text-xs uppercase tracking-[0.24em] text-ember">紧急停止</p>
+              <p className="mt-3 font-display text-4xl text-ink">立即暂停所有引导动作</p>
               <p className="mt-4 text-sm leading-7 text-slate">
                 如果官网页面出现异常，或者你不希望系统继续推进任何引导投递，可以在这里直接拉起紧急停止。
               </p>
@@ -86,9 +82,7 @@ export function HistoryPage() {
         </div>
 
         <div className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
-          <p className="text-xs uppercase tracking-[0.24em] text-slate">
-            搜索历史
-          </p>
+          <p className="text-xs uppercase tracking-[0.24em] text-slate">搜索历史</p>
           <div className="mt-5 space-y-3">
             {sessionsQuery.data?.map((session) => (
               <div
@@ -103,8 +97,8 @@ export function HistoryPage() {
                     <p className="mt-1 text-sm text-slate">
                       {session.requested_platforms
                         .map((platform) => pillLabel(platform))
-                        .join(" · ")}{" "}
-                      · {modeLabel(session.mode)} ·{" "}
+                        .join(" | ")}{" "}
+                      | {modeLabel(session.mode)} |{" "}
                       {new Date(session.created_at).toLocaleString()}
                     </p>
                     {session.analysis_notice ? (
@@ -122,9 +116,7 @@ export function HistoryPage() {
       </section>
 
       <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
-        <p className="text-xs uppercase tracking-[0.24em] text-slate">
-          投递记录
-        </p>
+        <p className="text-xs uppercase tracking-[0.24em] text-slate">投递记录</p>
         <div className="mt-5 space-y-3">
           {attemptsQuery.data?.map((attempt) => (
             <div
@@ -133,15 +125,15 @@ export function HistoryPage() {
             >
               <div>
                 <p className="font-semibold text-ink">
-                  {(attempt.context.job_title as string | undefined) || attempt.job_id}
+                  {(attempt.context.job_title as string | undefined) ||
+                    (attempt.context.job_id as string | undefined) ||
+                    attempt.listing_id}
                 </p>
                 <p className="mt-1 text-sm text-slate">
-                  {pillLabel(attempt.platform)} · {modeLabel(attempt.mode)} ·{" "}
+                  {pillLabel(attempt.platform)} | {modeLabel(attempt.mode)} |{" "}
                   {new Date(attempt.created_at).toLocaleString()}
                 </p>
-                <p className="mt-2 text-sm leading-7 text-slate">
-                  {attempt.message}
-                </p>
+                <p className="mt-2 text-sm leading-7 text-slate">{attempt.message}</p>
               </div>
               <div className="flex items-center gap-3">
                 <StatusPill>{attempt.status}</StatusPill>
@@ -152,7 +144,7 @@ export function HistoryPage() {
                     onClick={() => continueMutation.mutate(attempt.id)}
                     disabled={continueMutation.isPending}
                   >
-                    打开小窗并继续
+                    打开弹窗并继续
                   </button>
                 ) : null}
                 <button

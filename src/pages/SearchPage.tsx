@@ -15,18 +15,18 @@ const modeCards: Array<{
   {
     mode: "recommend_only",
     title: "仅推荐",
-    body: "只做官网搜索、清洗和排序，不打开页面，也不发起投递。",
+    body: "只抓取、清洗并排序职位，不打开职位页面。",
   },
   {
     mode: "review_in_browser",
-    title: "查看岗位",
-    body: "打开清洗后的官网岗位详情，在本地逐条判断是否继续。",
+    title: "打开职位页",
+    body: "在本地浏览器壳中打开清洗后的官网职位页面。",
     capabilityFlag: "review_open_supported",
   },
   {
     mode: "guided_apply",
     title: "引导投递",
-    body: "进入官网投递流程，登录和验证码统一在应用内小窗处理。",
+    body: "排序完成后，在应用内继续引导投递流程。",
     capabilityFlag: "guided_apply_supported",
   },
 ];
@@ -46,12 +46,10 @@ export function SearchPage() {
 
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [mode, setMode] = useState<AutomationMode>("recommend_only");
-  const [jobTargets, setJobTargets] = useState("前端工程师, 全栈工程师");
-  const [cities, setCities] = useState("上海, 杭州");
-  const [salaryFloor, setSalaryFloor] = useState("25000");
-  const [mustHaveKeywords, setMustHaveKeywords] = useState(
-    "React, TypeScript, 官网",
-  );
+  const [jobTargets, setJobTargets] = useState("前端工程师");
+  const [cities, setCities] = useState("");
+  const [salaryFloor, setSalaryFloor] = useState("0");
+  const [mustHaveKeywords, setMustHaveKeywords] = useState("");
 
   const platformsQuery = useQuery({
     queryKey: ["platforms"],
@@ -152,14 +150,13 @@ export function SearchPage() {
   return (
     <div className="space-y-6">
       <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
-        <p className="text-xs uppercase tracking-[0.24em] text-slate">
-          搜索工作台
-        </p>
+        <p className="text-xs uppercase tracking-[0.24em] text-slate">搜索职位</p>
         <h1 className="mt-3 font-display text-5xl text-ink">
-          多平台搜索从官网模块开始，未接入平台保留占位。
+          当前官网搜索只接入字节跳动，并发抓取社招和校招。
         </h1>
         <p className="mt-4 max-w-3xl text-sm leading-7 text-slate">
-          岗位会先从配置好的官网来源抓取，再经过代码清洗，最后进入模型排序阶段。尚未接入的平台会保留展示，但不可勾选。
+          当前版本不再从 <code>url.md</code> 读取运行时公司列表，而是使用代码清单。
+          搜索时会并发抓取字节跳动社招和校招，并直接使用列表接口返回的职位内容做清洗和排序。
         </p>
       </section>
 
@@ -195,9 +192,7 @@ export function SearchPage() {
           <div className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
             <div className="grid gap-5 md:grid-cols-2">
               <div className="space-y-3">
-                <span className="text-xs uppercase tracking-[0.2em] text-slate">
-                  平台
-                </span>
+                <span className="text-xs uppercase tracking-[0.2em] text-slate">平台</span>
                 <div className="space-y-3">
                   {platformsQuery.data?.map((platform) => {
                     const checked = selectedPlatforms.includes(platform.platform);
@@ -231,7 +226,7 @@ export function SearchPage() {
                           <p className="mt-1 text-sm leading-6 text-slate">
                             {platform.selectable
                               ? "已接入"
-                              : platform.disabled_reason || "暂未接入"}
+                              : platform.disabled_reason || "不可用"}
                           </p>
                         </div>
                       </label>
@@ -241,9 +236,7 @@ export function SearchPage() {
               </div>
 
               <label className="space-y-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-slate">
-                  薪资下限
-                </span>
+                <span className="text-xs uppercase tracking-[0.2em] text-slate">薪资下限</span>
                 <input
                   value={salaryFloor}
                   onChange={(event) => setSalaryFloor(event.target.value)}
@@ -251,9 +244,7 @@ export function SearchPage() {
                 />
               </label>
               <label className="space-y-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-slate">
-                  目标岗位
-                </span>
+                <span className="text-xs uppercase tracking-[0.2em] text-slate">目标职位</span>
                 <textarea
                   rows={4}
                   value={jobTargets}
@@ -262,9 +253,7 @@ export function SearchPage() {
                 />
               </label>
               <label className="space-y-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-slate">
-                  目标城市
-                </span>
+                <span className="text-xs uppercase tracking-[0.2em] text-slate">目标城市</span>
                 <textarea
                   rows={4}
                   value={cities}
@@ -272,128 +261,88 @@ export function SearchPage() {
                   className="w-full rounded-[24px] border border-ink/10 bg-paper px-4 py-3 text-sm leading-7 text-ink outline-none transition focus:border-ink/30"
                 />
               </label>
+              <label className="space-y-2 md:col-span-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-slate">必备关键词</span>
+                <textarea
+                  rows={4}
+                  value={mustHaveKeywords}
+                  onChange={(event) => setMustHaveKeywords(event.target.value)}
+                  className="w-full rounded-[24px] border border-ink/10 bg-paper px-4 py-3 text-sm leading-7 text-ink outline-none transition focus:border-ink/30"
+                />
+              </label>
             </div>
 
-            <label className="mt-5 block space-y-2">
-              <span className="text-xs uppercase tracking-[0.2em] text-slate">
-                必备关键词
-              </span>
-              <textarea
-                rows={4}
-                value={mustHaveKeywords}
-                onChange={(event) => setMustHaveKeywords(event.target.value)}
-                className="w-full rounded-[24px] border border-ink/10 bg-paper px-4 py-3 text-sm leading-7 text-ink outline-none transition focus:border-ink/30"
-              />
-            </label>
-
-            <div className="mt-6 flex flex-wrap gap-3">
+            <div className="mt-6 flex flex-wrap items-center gap-3">
               {mode === "guided_apply" && !guidedApplyEnabled ? (
                 <button
                   type="button"
-                  className="rounded-full bg-ember px-6 py-3 text-sm font-semibold text-shell transition hover:bg-ember/90"
+                  className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-shell px-5 py-3 text-sm font-semibold text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-60"
                   onClick={() => guidedConsentMutation.mutate()}
                   disabled={guidedConsentMutation.isPending}
                 >
-                  {guidedConsentMutation.isPending
-                    ? "正在记录确认..."
-                    : "确认引导投递风险"}
+                  <ShieldAlert size={16} />
+                  {guidedConsentMutation.isPending ? "正在保存同意..." : "启用引导投递"}
                 </button>
               ) : null}
-
               <button
                 type="button"
-                className="inline-flex items-center gap-2 rounded-full bg-ink px-6 py-3 text-sm font-semibold text-shell transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:bg-ink/40"
+                className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-shell transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:bg-ink/40"
                 onClick={() => searchMutation.mutate()}
                 disabled={searchDisabled}
               >
                 <SearchIcon size={16} />
-                {searchMutation.isPending ? "正在启动..." : "开始搜索"}
+                {searchMutation.isPending ? "搜索中..." : "开始搜索"}
               </button>
             </div>
 
-            {!selectedPlatformCapabilities.length ? (
-              <p className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-ink">
-                请至少选择一个已接入的平台。未接入的平台会保留展示，但不能勾选。
-              </p>
-            ) : null}
-
-            {mode === "guided_apply" && !guidedApplyEnabled ? (
-              <p className="mt-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-ink">
-                引导投递模式要求你先对当前选中的每个平台完成风险确认。
-              </p>
-            ) : null}
-
             {searchErrorMessage ? (
-              <p className="mt-4 rounded-2xl border border-ember/30 bg-ember/10 px-4 py-3 text-sm leading-6 text-ink">
+              <div className="mt-5 rounded-[24px] border border-ember/20 bg-ember/10 px-4 py-3 text-sm leading-7 text-ink">
                 {searchErrorMessage}
-              </p>
+              </div>
             ) : null}
           </div>
         </div>
 
         <div className="space-y-6">
-          <div className="rounded-[32px] border border-ember/20 bg-ember/10 p-6 shadow-console">
-            <div className="flex items-start gap-3">
-              <ShieldAlert className="mt-1 text-ember" size={18} />
-              <div>
-                <p className="text-xs uppercase tracking-[0.24em] text-ember">
-                  验证方式
-                </p>
-                <p className="mt-3 text-sm leading-7 text-slate">
-                  官网搜索和投递过程中可能会遇到登录、验证码或二次校验。这些步骤统一在应用内小窗里完成，而不是跳到外部浏览器。
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
-            <p className="text-xs uppercase tracking-[0.24em] text-slate">
-              当前限制
-            </p>
+          <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
+            <p className="text-xs uppercase tracking-[0.24em] text-slate">当前限制</p>
             <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <div className="rounded-[24px] bg-paper p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate">
-                  每小时剩余
-                </p>
-                <p className="mt-2 font-display text-4xl text-ink">
+              <div className="rounded-[24px] bg-paper p-5">
+                <p className="text-sm text-slate">每小时剩余</p>
+                <p className="mt-2 font-display text-5xl text-ink">
                   {riskStatusQuery.data?.remaining_hourly ?? "--"}
                 </p>
               </div>
-              <div className="rounded-[24px] bg-paper p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate">
-                  每日剩余
-                </p>
-                <p className="mt-2 font-display text-4xl text-ink">
+              <div className="rounded-[24px] bg-paper p-5">
+                <p className="text-sm text-slate">每日剩余</p>
+                <p className="mt-2 font-display text-5xl text-ink">
                   {riskStatusQuery.data?.remaining_daily ?? "--"}
                 </p>
               </div>
             </div>
-            <p className="mt-5 text-sm leading-7 text-slate">
-              冷却到期：
-              {riskStatusQuery.data?.cooldown_until
-                ? new Date(riskStatusQuery.data.cooldown_until).toLocaleString()
-                : "无"}
+            <p className="mt-5 text-sm text-slate">
+              冷却到期：{riskStatusQuery.data?.cooldown_until || "无"}
             </p>
+          </section>
 
-            <div className="mt-5 rounded-[24px] border border-ink/10 bg-paper p-4">
-              <div className="flex items-center gap-2 text-ink">
-                <AlertTriangle size={16} />
-                <p className="font-semibold">已选平台能力</p>
-              </div>
-              <div className="mt-3 space-y-3 text-sm leading-7 text-slate">
-                {selectedPlatformCapabilities.map((platform) => (
-                  <div key={platform.platform}>
-                    <p className="font-semibold text-ink">{platform.label}</p>
-                    <p>
-                      搜索：{platform.search_supported ? "支持" : "不支持"} · 查看：
-                      {platform.review_open_supported ? "支持" : "不支持"} · 引导投递：
-                      {platform.guided_apply_supported ? "支持" : "不支持"}
-                    </p>
-                  </div>
-                ))}
-              </div>
+          <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
+            <p className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-slate">
+              <AlertTriangle size={16} />
+              已选平台能力
+            </p>
+            <div className="mt-5 space-y-4">
+              {selectedPlatformCapabilities.map((platform) => (
+                <div key={platform.platform} className="rounded-[24px] bg-paper p-5 text-sm text-slate">
+                  <p className="font-semibold text-ink">{platform.label}</p>
+                  <p className="mt-2">
+                    搜索：{platform.search_supported ? "支持" : "不支持"} | 查看：{" "}
+                    {platform.review_open_supported ? "支持" : "不支持"} | 引导投递：{" "}
+                    {platform.guided_apply_supported ? "支持" : "不支持"}
+                  </p>
+                </div>
+              ))}
             </div>
-          </div>
+          </section>
         </div>
       </section>
     </div>

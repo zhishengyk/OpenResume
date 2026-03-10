@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from openresume_api.adapters.base import NormalizedJobDraft
 from openresume_api.models import CandidateProfile
 from openresume_api.services.matching import matching_service
@@ -14,43 +16,41 @@ def test_matching_service_filters_and_scores_expected_roles():
     )
     drafts = [
         NormalizedJobDraft(
-            external_job_id="1",
+            source_company="ByteDance",
+            source_site="jobs.bytedance.com",
+            job_id="1",
             title="Senior Frontend Engineer",
-            company_name="A",
-            city="Shanghai",
-            salary_text="30k-40k",
+            employment_type="Experienced",
+            location_raw="Shanghai",
+            location_city="Shanghai",
+            location_country="China",
+            remote_type="hybrid",
+            description_text="React TypeScript Node.js design system engineering",
+            requirements_text="React TypeScript",
+            apply_url="https://jobs.bytedance.com/experienced/position/1/detail",
+            salary_raw="30k-40k",
             salary_min=30000,
             salary_max=40000,
-            experience_text="3-5 years",
-            degree_text="Bachelor",
-            work_mode="hybrid",
-            url="https://example.com/1",
-            detail_url="https://example.com/1",
-            apply_url="https://example.com/1/apply",
-            source_company_url="https://example.com",
-            apply_requires_login=True,
-            jd_text="React TypeScript Node.js design system engineering",
-            jd_hash="hash-1",
+            posted_at=datetime(2026, 3, 1),
             raw_payload={"platform": "official"},
         ),
         NormalizedJobDraft(
-            external_job_id="2",
+            source_company="ByteDance",
+            source_site="jobs.bytedance.com",
+            job_id="2",
             title="Backend Engineer",
-            company_name="B",
-            city="Beijing",
-            salary_text="20k-28k",
+            employment_type="Experienced",
+            location_raw="Beijing",
+            location_city="Beijing",
+            location_country="China",
+            remote_type="onsite",
+            description_text="Python FastAPI",
+            requirements_text="Python",
+            apply_url="https://jobs.bytedance.com/experienced/position/2/detail",
+            salary_raw="20k-28k",
             salary_min=20000,
             salary_max=28000,
-            experience_text="3-5 years",
-            degree_text="Bachelor",
-            work_mode="onsite",
-            url="https://example.com/2",
-            detail_url="https://example.com/2",
-            apply_url="https://example.com/2/apply",
-            source_company_url="https://example.com",
-            apply_requires_login=True,
-            jd_text="Python FastAPI",
-            jd_hash="hash-2",
+            posted_at=datetime(2026, 3, 1),
             raw_payload={"platform": "official"},
         ),
     ]
@@ -65,6 +65,6 @@ def test_matching_service_filters_and_scores_expected_roles():
     )
 
     assert len(matches) == 1
-    assert matches[0].draft.external_job_id == "1"
+    assert matches[0].draft.job_id == "1"
     assert matches[0].rule_score > 70
     assert "React" in matches[0].highlights

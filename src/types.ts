@@ -80,24 +80,30 @@ export interface SearchSession {
 
 export interface JobMatch {
   id: string;
-  job_id: string;
+  listing_id: string;
   platform: string;
-  external_job_id: string;
+  job_id: string;
+  source_company: string;
+  source_site: string;
   title: string;
-  company_name: string;
-  city: string;
-  salary_text: string;
-  experience_text: string;
-  degree_text: string;
-  work_mode: string;
-  url: string;
-  detail_url?: string | null;
-  apply_url?: string | null;
-  source_company_url?: string | null;
-  apply_requires_login: boolean;
+  department: string;
+  employment_type: string;
+  location_raw: string;
+  location_city: string;
+  location_country: string;
+  remote_type: string;
+  description_html: string;
+  description_text: string;
+  requirements_text: string;
+  skills_extracted: string[];
+  posted_at?: string | null;
+  apply_url: string;
+  salary_raw: string;
+  salary_min?: number | null;
+  salary_max?: number | null;
+  lang: string;
+  crawl_time: string;
   apply_supported: boolean;
-  jd_text: string;
-  jd_excerpt: string;
   rule_score: number;
   llm_score?: number | null;
   final_score: number;
@@ -113,7 +119,7 @@ export interface JobMatch {
 
 export interface ApplicationAttempt {
   id: string;
-  job_id: string;
+  listing_id: string;
   platform: string;
   mode: AutomationMode;
   status: ApplicationAttemptStatus;
@@ -159,7 +165,7 @@ export interface RuntimeConfig {
   openai_api_key_preview?: string | null;
   openai_base_url?: string | null;
   openai_model?: string | null;
-  official_source_file: string;
+  official_sources_summary: string;
 }
 
 export interface RuntimeConfigUpdatePayload {
