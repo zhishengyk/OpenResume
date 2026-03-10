@@ -4,7 +4,7 @@ import webbrowser
 
 from sqlmodel import Session
 
-from ..career_collectors import career_collector_runner, load_sources
+from ..career_collectors import career_collector_runner, filter_sources, load_sources
 from ..config import settings
 from ..models import CandidateProfile, JobListing
 from ..schemas import PlatformCapabilityResponse, SearchSessionCreate
@@ -76,8 +76,15 @@ class OfficialAdapter:
         search: SearchSessionCreate,
         profile: CandidateProfile,
     ) -> list[NormalizedJobDraft]:
-        sources = list(load_sources())
-        run_results = await career_collector_runner.run(sources, search, profile)
+        all_sources = load_sources()
+        sources = filter_sources(
+            all_sources,
+            variants=search.source_variants or None,
+            companies=search.source_companies or None,
+        )
+        if not sources:
+            raise PlatformDataError("请至少选择一个招聘类型或公司。")
+        run_results = await career_collector_runner.run(list(sources), search, profile)
 
         stats = {
             "sources_declared": len(sources),

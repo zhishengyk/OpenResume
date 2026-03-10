@@ -43,6 +43,7 @@ from .services.profile import profile_service
 from .services.risk import risk_control_service
 from .services.runtime_config import runtime_config_service
 from .services.search import search_service
+from .career_collectors import get_available_companies, get_available_variants, load_sources
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
@@ -208,7 +209,7 @@ def runtime_config_response() -> RuntimeConfigResponse:
         ),
         openai_base_url=llm_config.openai_base_url,
         openai_model=llm_config.openai_model,
-        official_sources_summary="代码清单：字节跳动社招 + 校招",
+        official_sources_summary="代码清单：字节跳动社招 + 校招 + 实习",
     )
 
 
@@ -339,6 +340,30 @@ def list_platforms():
     return platform_gateway.list_capabilities()
 
 
+@app.get("/api/sources")
+def list_sources():
+    sources = load_sources()
+    return [
+        {
+            "key": source.key,
+            "company_name": source.company_name,
+            "variant": source.variant,
+            "label": source.label,
+        }
+        for source in sources
+    ]
+
+
+@app.get("/api/sources/variants")
+def list_source_variants():
+    return get_available_variants()
+
+
+@app.get("/api/sources/companies")
+def list_source_companies():
+    return get_available_companies()
+
+
 @app.get("/api/platforms/{platform}/capabilities")
 def get_platform_capabilities(platform: str):
     return platform_gateway.get(platform).capability()
@@ -384,7 +409,7 @@ def get_risk_status(platform: str, db: SessionDep):
 async def create_search_session(payload: SearchSessionCreate, db: SessionDep):
     platforms = list(dict.fromkeys(payload.platforms))
     if not platforms:
-        raise HTTPException(status_code=400, detail="请至少选择一个平台。")
+        platforms = ["official"]
 
     adapters = platform_gateway.resolve(platforms)
     for adapter in adapters:
@@ -417,6 +442,8 @@ async def create_search_session(payload: SearchSessionCreate, db: SessionDep):
         cities=payload.cities,
         salary_floor=payload.salary_floor,
         must_have_keywords=payload.must_have_keywords,
+        source_variants=payload.source_variants,
+        source_companies=payload.source_companies,
     )
     return await search_service.create_session(db, normalized_payload)
 

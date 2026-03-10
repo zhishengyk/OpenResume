@@ -211,6 +211,7 @@ def test_matching_service_filters_by_must_have_keywords():
     matched_ids = {m.draft.job_id for m in matches}
     assert "1" in matched_ids
     assert "2" in matched_ids
+    assert "3" not in matched_ids
 
 
 def test_matching_service_returns_empty_for_no_matches():

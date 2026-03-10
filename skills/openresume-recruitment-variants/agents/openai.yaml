@@ -1,0 +1,4 @@
+interface:
+  display_name: "Recruitment Variants"
+  short_description: "Define and implement recruitment type variants (experienced/campus/internship)."
+  default_prompt: "Use $openresume-recruitment-variants to ensure proper variant support when adding or updating career site adapters."
