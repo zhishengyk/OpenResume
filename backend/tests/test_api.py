@@ -128,6 +128,24 @@ def sample_drafts(count: int) -> list[NormalizedJobDraft]:
     return drafts
 
 
+def variant_draft(
+    *,
+    job_id: str,
+    location_city: str,
+    apply_suffix: str,
+    title: str = "Senior Frontend Engineer",
+) -> NormalizedJobDraft:
+    draft = sample_draft()
+    draft.job_id = job_id
+    draft.title = title
+    draft.location_city = location_city
+    draft.location_raw = location_city
+    draft.apply_url = (
+        f"https://jobs.bytedance.com/experienced/position/{job_id}/{apply_suffix}"
+    )
+    return draft
+
+
 def test_disclaimer_flow(client):
     first = client.get("/api/app-state")
     assert first.status_code == 200
@@ -264,6 +282,156 @@ def test_search_pipeline_returns_matches_and_degraded_notice(client, monkeypatch
     assert payload[0]["source_company"] == "ByteDance"
     assert payload[0]["description_text"]
     assert payload[0]["analysis_degraded"] is True
+
+
+def test_search_matches_merge_same_job_id_with_multi_locations(client, monkeypatch):
+    upsert_profile(client)
+
+    async def fake_search_jobs(search, profile):
+        return [
+            variant_draft(
+                job_id="official-dup-001",
+                location_city="Hangzhou",
+                apply_suffix="hangzhou",
+            ),
+            variant_draft(
+                job_id="official-dup-001",
+                location_city="Beijing",
+                apply_suffix="beijing",
+            ),
+            variant_draft(
+                job_id="official-dup-001",
+                location_city="Shanghai",
+                apply_suffix="shanghai",
+            ),
+        ]
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+
+    session = create_search_session(client, salary_floor=0, must_have_keywords=[], cities=[])
+    assert session.status_code == 200
+    wait_for_session_status(client, session.json()["id"], "ready")
+
+    response = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert len(payload) == 1
+    match = payload[0]
+    assert match["job_id"] == "official-dup-001"
+    assert match["is_merged"] is True
+    assert match["merged_count"] == 3
+    assert set(match["location_cities"]) == {"Hangzhou", "Beijing", "Shanghai"}
+    assert set(match["location_display"].split("/")) == {
+        "Hangzhou",
+        "Beijing",
+        "Shanghai",
+    }
+    assert len(match["location_options"]) == 3
+    assert set(item["location_city"] for item in match["location_options"]) == {
+        "Hangzhou",
+        "Beijing",
+        "Shanghai",
+    }
+    assert any(match["apply_url"].endswith(suffix) for suffix in ["/hangzhou", "/beijing", "/shanghai"])
+
+
+def test_search_matches_do_not_merge_when_job_id_differs(client, monkeypatch):
+    upsert_profile(client)
+
+    async def fake_search_jobs(search, profile):
+        return [
+            variant_draft(
+                job_id="official-uniq-001",
+                location_city="Hangzhou",
+                apply_suffix="hz",
+            ),
+            variant_draft(
+                job_id="official-uniq-002",
+                location_city="Beijing",
+                apply_suffix="bj",
+            ),
+        ]
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+
+    session = create_search_session(client, salary_floor=0, must_have_keywords=[], cities=[])
+    assert session.status_code == 200
+    wait_for_session_status(client, session.json()["id"], "ready")
+
+    response = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert len(payload) == 2
+    assert all(item["is_merged"] is False for item in payload)
+    assert all(item["merged_count"] == 1 for item in payload)
+    assert {item["job_id"] for item in payload} == {"official-uniq-001", "official-uniq-002"}
+
+
+def test_search_matches_do_not_merge_when_job_id_is_empty(client, monkeypatch):
+    upsert_profile(client)
+
+    async def fake_search_jobs(search, profile):
+        return [
+            variant_draft(job_id="", location_city="Hangzhou", apply_suffix="hz-empty"),
+            variant_draft(job_id="", location_city="Beijing", apply_suffix="bj-empty"),
+        ]
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+
+    session = create_search_session(client, salary_floor=0, must_have_keywords=[], cities=[])
+    assert session.status_code == 200
+    wait_for_session_status(client, session.json()["id"], "ready")
+
+    response = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert len(payload) == 2
+    assert all(item["job_id"] == "" for item in payload)
+    assert all(item["is_merged"] is False for item in payload)
+    assert all(item["merged_count"] == 1 for item in payload)
+
+
+def test_search_matches_keep_representative_score_order_after_merge(client, monkeypatch):
+    upsert_profile(client)
+
+    async def fake_search_jobs(search, profile):
+        return [
+            variant_draft(
+                job_id="low-score",
+                title="Backend Engineer",
+                location_city="Beijing",
+                apply_suffix="bj",
+            ),
+            variant_draft(
+                job_id="low-score",
+                title="Backend Engineer",
+                location_city="Shanghai",
+                apply_suffix="sh",
+            ),
+            variant_draft(
+                job_id="high-score",
+                title="Senior Frontend Engineer",
+                location_city="Hangzhou",
+                apply_suffix="hz",
+            ),
+        ]
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+
+    session = create_search_session(client, salary_floor=0, must_have_keywords=[], cities=[])
+    assert session.status_code == 200
+    wait_for_session_status(client, session.json()["id"], "ready")
+
+    response = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert len(payload) == 2
+    assert payload[0]["job_id"] == "high-score"
+    assert payload[1]["job_id"] == "low-score"
 
 
 def test_guided_apply_requires_consent_and_uses_listing_id(client, monkeypatch):

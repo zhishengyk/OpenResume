@@ -81,6 +81,13 @@ export interface SearchSession {
   analysis_notice?: string | null;
 }
 
+export interface JobLocationOption {
+  listing_id: string;
+  location_city: string;
+  location_raw: string;
+  apply_url: string;
+}
+
 export interface JobMatch {
   id: string;
   listing_id: string;
@@ -101,6 +108,11 @@ export interface JobMatch {
   skills_extracted: string[];
   posted_at?: string | null;
   apply_url: string;
+  location_display: string;
+  location_cities: string[];
+  location_options: JobLocationOption[];
+  is_merged: boolean;
+  merged_count: number;
   salary_raw: string;
   salary_min?: number | null;
   salary_max?: number | null;

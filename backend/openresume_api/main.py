@@ -24,6 +24,7 @@ from .schemas import (
     ApplicationAttemptResponse,
     CandidateProfileUpdate,
     EmergencyStopRequest,
+    JobLocationOptionResponse,
     JobMatchResponse,
     LLMConnectionTestResponse,
     LLMModelListResponse,
@@ -114,6 +115,24 @@ def platform_session_response(platform: str, state: dict) -> PlatformSessionResp
 
 
 def match_response(match: JobMatch, job: JobListing) -> JobMatchResponse:
+    location_options = [
+        JobLocationOptionResponse(
+            listing_id=job.id,
+            location_city=job.location_city,
+            location_raw=job.location_raw,
+            apply_url=job.apply_url,
+        )
+    ]
+    location_labels = list(
+        dict.fromkeys(
+            (
+                option.location_city.strip()
+                or option.location_raw.strip()
+                or "地点未知"
+            )
+            for option in location_options
+        )
+    )
     return JobMatchResponse(
         id=match.id,
         listing_id=job.id,
@@ -134,6 +153,80 @@ def match_response(match: JobMatch, job: JobListing) -> JobMatchResponse:
         skills_extracted=job.skills_extracted,
         posted_at=job.posted_at,
         apply_url=job.apply_url,
+        location_display="/".join(location_labels) if location_labels else "地点未知",
+        location_cities=location_labels,
+        location_options=location_options,
+        is_merged=False,
+        merged_count=1,
+        salary_raw=job.salary_raw,
+        salary_min=job.salary_min,
+        salary_max=job.salary_max,
+        lang=job.lang,
+        crawl_time=job.crawl_time,
+        apply_supported=bool(job.apply_url),
+        rule_score=match.rule_score,
+        llm_score=match.llm_score,
+        final_score=match.final_score,
+        highlights=match.highlights,
+        missing_keywords=match.missing_keywords,
+        risk_flags=match.risk_flags,
+        llm_summary=match.llm_summary,
+        cached_llm=match.cached_llm,
+        analysis_provider=match.analysis_provider,
+        analysis_degraded=match.analysis_degraded,
+        analysis_notice=match.analysis_notice,
+    )
+
+
+def merged_match_response(
+    match: JobMatch,
+    job: JobListing,
+    location_options: list[JobLocationOptionResponse],
+) -> JobMatchResponse:
+    normalized_options = location_options or [
+        JobLocationOptionResponse(
+            listing_id=job.id,
+            location_city=job.location_city,
+            location_raw=job.location_raw,
+            apply_url=job.apply_url,
+        )
+    ]
+    location_labels = list(
+        dict.fromkeys(
+            (
+                option.location_city.strip()
+                or option.location_raw.strip()
+                or "地点未知"
+            )
+            for option in normalized_options
+        )
+    )
+    merged_count = max(1, len(normalized_options))
+    return JobMatchResponse(
+        id=match.id,
+        listing_id=job.id,
+        platform=job.platform,
+        job_id=job.job_id,
+        source_company=job.source_company,
+        source_site=job.source_site,
+        title=job.title,
+        department=job.department,
+        employment_type=job.employment_type,
+        location_raw=job.location_raw,
+        location_city=job.location_city,
+        location_country=job.location_country,
+        remote_type=job.remote_type,
+        description_html=job.description_html,
+        description_text=job.description_text,
+        requirements_text=job.requirements_text,
+        skills_extracted=job.skills_extracted,
+        posted_at=job.posted_at,
+        apply_url=job.apply_url,
+        location_display="/".join(location_labels) if location_labels else "地点未知",
+        location_cities=location_labels,
+        location_options=normalized_options,
+        is_merged=merged_count > 1,
+        merged_count=merged_count,
         salary_raw=job.salary_raw,
         salary_min=job.salary_min,
         salary_max=job.salary_max,
@@ -486,11 +579,80 @@ def get_search_matches(session_id: str, db: SessionDep):
         job.id: job
         for job in db.exec(select(JobListing).where(JobListing.session_id == session_id)).all()
     }
-    return [
-        match_response(match, jobs[match.job_id])
-        for match in matches
-        if match.job_id in jobs
-    ]
+    grouped_index: dict[tuple[str, str, str, str], int] = {}
+    grouped_payload: list[dict] = []
+
+    for match in matches:
+        job = jobs.get(match.job_id)
+        if not job:
+            continue
+
+        option = JobLocationOptionResponse(
+            listing_id=job.id,
+            location_city=job.location_city,
+            location_raw=job.location_raw,
+            apply_url=job.apply_url,
+        )
+
+        normalized_job_id = (job.job_id or "").strip()
+        if not normalized_job_id:
+            grouped_payload.append(
+                {
+                    "match": match,
+                    "job": job,
+                    "location_options": [option],
+                    "location_option_keys": {
+                        (
+                            (option.location_city or option.location_raw).strip().lower(),
+                            option.apply_url.strip().lower(),
+                        )
+                    },
+                }
+            )
+            continue
+
+        group_key = (
+            job.platform.lower(),
+            job.source_site.lower(),
+            job.source_company.lower(),
+            normalized_job_id.lower(),
+        )
+
+        existing_index = grouped_index.get(group_key)
+        option_key = (
+            (option.location_city or option.location_raw).strip().lower(),
+            option.apply_url.strip().lower(),
+        )
+        if existing_index is None:
+            grouped_index[group_key] = len(grouped_payload)
+            grouped_payload.append(
+                {
+                    "match": match,
+                    "job": job,
+                    "location_options": [option],
+                    "location_option_keys": {option_key},
+                }
+            )
+            continue
+
+        existing = grouped_payload[existing_index]
+        location_option_keys: set[tuple[str, str]] = existing["location_option_keys"]
+        if option_key in location_option_keys:
+            continue
+        location_option_keys.add(option_key)
+        location_options: list[JobLocationOptionResponse] = existing["location_options"]
+        location_options.append(option)
+
+    responses: list[JobMatchResponse] = []
+    for payload in grouped_payload:
+        responses.append(
+            merged_match_response(
+                payload["match"],
+                payload["job"],
+                payload["location_options"],
+            )
+        )
+    return responses
 
 
 @app.get("/api/search-sessions/{session_id}/events")
