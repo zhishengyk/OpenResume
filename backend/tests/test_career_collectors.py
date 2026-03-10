@@ -65,11 +65,12 @@ def make_record(*, job_id: str, title: str = "Frontend Engineer") -> CollectedJo
     )
 
 
-def test_manifest_only_registers_bytedance_sources():
+def test_manifest_registers_bytedance_sources():
     sources = load_sources()
     assert [source.key for source in sources] == [
         "bytedance-experienced",
         "bytedance-campus",
+        "bytedance-internship",
     ]
     assert all(source.collector_key == "bytedance" for source in sources)
 
@@ -373,7 +374,7 @@ class TestFilterSources:
     def test_filters_by_company(self):
         sources = load_sources()
         filtered = filter_sources(sources, companies=["字节跳动"])
-        assert len(filtered) == 2
+        assert len(filtered) == 3
 
     def test_filters_by_both(self):
         sources = load_sources()
