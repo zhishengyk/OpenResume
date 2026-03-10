@@ -16,6 +16,8 @@ from .matching import matching_service
 from .platform_gateway import platform_gateway
 from .risk import risk_control_service
 
+LLM_ANALYSIS_LIMIT = 120
+
 
 class SearchService:
     def _session_meta_key(self, session_id: str) -> str:
@@ -49,6 +51,8 @@ class SearchService:
             cities=list(session.cities or []),
             salary_floor=session.salary_floor,
             must_have_keywords=list(session.must_have_keywords or []),
+            source_variants=list(session.source_variants or []),
+            source_companies=list(session.source_companies or []),
         )
 
     async def create_session(
@@ -64,6 +68,8 @@ class SearchService:
             cities=payload.cities,
             salary_floor=payload.salary_floor,
             must_have_keywords=payload.must_have_keywords,
+            source_variants=payload.source_variants,
+            source_companies=payload.source_companies,
             summary="搜索已开始，正在抓取并清洗官网职位。",
         )
         db.add(session)
@@ -211,8 +217,6 @@ class SearchService:
                     requested_keywords=payload.must_have_keywords,
                     salary_floor=payload.salary_floor,
                 )
-                rule_matches = rule_matches[:20]
-
                 db.exec(delete(JobMatch).where(JobMatch.session_id == session_id))
                 db.exec(delete(JobListing).where(JobListing.session_id == session_id))
                 db.commit()
@@ -248,8 +252,7 @@ class SearchService:
                         raw_payload=draft.raw_payload,
                     )
                     db.add(job)
-                    db.commit()
-                    db.refresh(job)
+                    db.flush()
                     stored_jobs.append(job)
 
                     match = JobMatch(
@@ -262,9 +265,9 @@ class SearchService:
                         risk_flags=rule_match.risk_flags,
                     )
                     db.add(match)
-                    db.commit()
-                    db.refresh(match)
+                    db.flush()
                     stored_matches.append(match)
+                db.commit()
 
                 event_bus.publish(
                     session_id,
@@ -273,7 +276,8 @@ class SearchService:
                     {"matches": len(stored_jobs)},
                 )
 
-                analysis_batch = await llm_service.analyze_jobs(db, profile, stored_jobs)
+                llm_target_jobs = stored_jobs[:LLM_ANALYSIS_LIMIT]
+                analysis_batch = await llm_service.analyze_jobs(db, profile, llm_target_jobs)
                 llm_by_job = {
                     result.job_id: result
                     for result in analysis_batch.results
@@ -334,6 +338,7 @@ class SearchService:
                     f"排序已完成，分析提供方：{provider}。",
                     {
                         "matches": len(stored_jobs),
+                        "llm_analyzed": len(llm_target_jobs),
                         "analysis_provider": provider,
                         "analysis_degraded": degraded,
                         "analysis_notice": notice,

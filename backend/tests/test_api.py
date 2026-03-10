@@ -3,7 +3,13 @@ from datetime import datetime
 
 from openresume_api.adapters.base import NormalizedJobDraft, PlatformBlockedError
 from openresume_api.adapters.official import official_adapter
-from openresume_api.services.llm import OpenAICompatibleLLMProvider
+from openresume_api.services.llm import (
+    AnalysisBatch,
+    AnalysisMetadata,
+    LLMResult,
+    OpenAICompatibleLLMProvider,
+    llm_service,
+)
 from openresume_api.services.runtime_config import runtime_config_service
 
 
@@ -47,16 +53,24 @@ def create_search_session(
     *,
     platforms: list[str] | None = None,
     mode: str = "recommend_only",
+    source_variants: list[str] | None = None,
+    source_companies: list[str] | None = None,
+    job_targets: list[str] | None = None,
+    cities: list[str] | None = None,
+    salary_floor: int = 25000,
+    must_have_keywords: list[str] | None = None,
 ):
     return client.post(
         "/api/search-sessions",
         json={
             "platforms": platforms or ["official"],
             "mode": mode,
-            "job_targets": ["Frontend Engineer", "Full Stack Engineer"],
-            "cities": ["Shanghai", "Hangzhou"],
-            "salary_floor": 25000,
-            "must_have_keywords": ["React", "TypeScript"],
+            "job_targets": job_targets or ["Frontend Engineer", "Full Stack Engineer"],
+            "cities": cities or ["Shanghai", "Hangzhou"],
+            "salary_floor": salary_floor,
+            "must_have_keywords": must_have_keywords or ["React", "TypeScript"],
+            "source_variants": source_variants or [],
+            "source_companies": source_companies or [],
         },
     )
 
@@ -86,6 +100,19 @@ def sample_draft() -> NormalizedJobDraft:
         crawl_time=datetime(2026, 3, 10),
         raw_payload={"source": "test", "platform": "official"},
     )
+
+
+def sample_drafts(count: int) -> list[NormalizedJobDraft]:
+    drafts: list[NormalizedJobDraft] = []
+    for index in range(count):
+        draft = sample_draft()
+        draft.job_id = f"official-live-{index:03d}"
+        draft.title = f"Frontend Engineer {index}"
+        draft.apply_url = (
+            f"https://jobs.bytedance.com/experienced/position/{draft.job_id}/detail"
+        )
+        drafts.append(draft)
+    return drafts
 
 
 def test_disclaimer_flow(client):
@@ -294,6 +321,114 @@ def test_blocked_search_can_open_verification_and_retry(client, monkeypatch):
     ready = wait_for_session_status(client, session.json()["id"], "ready")
     assert ready["blocked_reason"] is None
     assert call_count["value"] == 2
+
+
+def test_search_session_persists_source_filters_and_retry_reuses_them(client, monkeypatch):
+    upsert_profile(client)
+    observed: list[tuple[list[str], list[str]]] = []
+
+    async def fake_search_jobs(search, profile):
+        observed.append((list(search.source_variants), list(search.source_companies)))
+        return [sample_draft()]
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+
+    session = create_search_session(
+        client,
+        source_variants=["campus", "internship"],
+        source_companies=["字节跳动"],
+    )
+    assert session.status_code == 200
+    session_id = session.json()["id"]
+    wait_for_session_status(client, session_id, "ready")
+
+    latest = client.get(f"/api/search-sessions/{session_id}")
+    assert latest.status_code == 200
+    payload = latest.json()
+    assert payload["source_variants"] == ["campus", "internship"]
+    assert payload["source_companies"] == ["字节跳动"]
+
+    retry = client.post(f"/api/search-sessions/{session_id}/retry")
+    assert retry.status_code == 200
+    wait_for_session_status(client, session_id, "ready")
+
+    assert len(observed) >= 2
+    assert observed[0] == (["campus", "internship"], ["字节跳动"])
+    assert observed[1] == (["campus", "internship"], ["字节跳动"])
+
+
+def test_search_pipeline_is_not_capped_to_twenty_matches(client, monkeypatch):
+    upsert_profile(client)
+
+    async def fake_search_jobs(search, profile):
+        return sample_drafts(35)
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+
+    session = create_search_session(
+        client,
+        salary_floor=0,
+        must_have_keywords=[],
+        cities=[],
+    )
+    assert session.status_code == 200
+
+    wait_for_session_status(client, session.json()["id"], "ready")
+    matches = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    assert matches.status_code == 200
+    assert len(matches.json()) == 35
+
+
+def test_search_pipeline_only_applies_llm_to_first_120_matches(client, monkeypatch):
+    upsert_profile(client)
+    observed = {"jobs": 0}
+
+    async def fake_search_jobs(search, profile):
+        return sample_drafts(130)
+
+    async def fake_analyze_jobs(db, profile, jobs):
+        job_list = list(jobs)
+        observed["jobs"] = len(job_list)
+        return AnalysisBatch(
+            metadata=AnalysisMetadata(
+                provider="heuristic",
+                degraded=True,
+                notice="test",
+            ),
+            results=[
+                LLMResult(
+                    cache_key=f"cache-{job.job_id}",
+                    job_id=job.job_id,
+                    llm_score=88.0,
+                    highlights=["React"],
+                    missing_keywords=[],
+                    risk_flags=[],
+                    llm_summary="ok",
+                )
+                for job in job_list
+            ],
+        )
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+    monkeypatch.setattr(llm_service, "analyze_jobs", fake_analyze_jobs)
+
+    session = create_search_session(
+        client,
+        salary_floor=0,
+        must_have_keywords=[],
+        cities=[],
+    )
+    assert session.status_code == 200
+
+    wait_for_session_status(client, session.json()["id"], "ready")
+    matches = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    assert matches.status_code == 200
+
+    payload = matches.json()
+    assert len(payload) == 130
+    assert observed["jobs"] == 120
+    assert sum(1 for item in payload if item["llm_score"] is not None) == 120
+    assert sum(1 for item in payload if item["llm_score"] is None) == 10
 
 
 def test_disabled_platform_is_rejected(client):

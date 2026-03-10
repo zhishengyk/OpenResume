@@ -69,6 +69,8 @@ export interface SearchSession {
   cities: string[];
   salary_floor: number;
   must_have_keywords: string[];
+  source_variants: string[];
+  source_companies: string[];
   created_at: string;
   updated_at: string;
   blocked_reason?: string | null;
