@@ -69,6 +69,17 @@ VARIANT_CONFIGS = {
             HeaderProfile("office", "society", "office"),
         ),
     ),
+    "internship": BytedanceVariantConfig(
+        variant="internship",
+        entry_url="https://jobs.bytedance.com/campus",
+        search_path="/campus/position/list",
+        detail_path_template="https://jobs.bytedance.com/campus/position/{job_id}/detail",
+        portal_type=3,
+        header_profiles=(
+            HeaderProfile("campus", "campus", "campus"),
+            HeaderProfile("office", "society", "office"),
+        ),
+    ),
 }
 
 

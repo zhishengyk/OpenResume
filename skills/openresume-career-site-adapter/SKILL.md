@@ -34,6 +34,18 @@ Use this skill to turn a company career homepage into real job detail extraction
 - `backend/openresume_api/adapters/official_extractors/common.py`
   Use for title cleanup, city normalization, salary parsing, directory classification, and quality scoring.
 
+## Recruitment Type Variants
+
+All adapters must support three standard recruitment types. Use `$openresume-recruitment-variants` skill for details.
+
+| Variant | Label | Description |
+|---------|-------|-------------|
+| `experienced` | 社招 | Social recruitment for experienced professionals |
+| `campus` | 校招 | Campus recruitment for fresh graduates |
+| `internship` | 实习 | Internship for current students |
+
+When adding a new company source, define all three variants in `manifest.py` if the site supports them.
+
 ## Rules
 
 - Start from the homepage and assume it may only contain links to the real search pages.
@@ -43,6 +55,7 @@ Use this skill to turn a company career homepage into real job detail extraction
 - If a homepage links into a filtered share page, try the canonical unfiltered list page as well before accepting a zero-result API response.
 - Do not relax hard filters to make a site look green. If everything is filtered as directory or noise, extraction is still wrong.
 - Keep `raw_payload.quality` truthful so matching logic keeps working.
+- Always define all three recruitment type variants (experienced/campus/internship) for each company source.
 
 ## Reference
 

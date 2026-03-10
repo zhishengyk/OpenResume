@@ -94,9 +94,11 @@ class BytedanceCollector(CompanyCollector):
             or _first_nested_name(payload.get("job_subject"))
             or _first_nested_name(payload.get("department_info"))
         )
-        employment_type = (
-            "\u793e\u62db" if source.variant == "experienced" else "\u6821\u62db"
-        )
+        employment_type = {
+            "experienced": "\u793e\u62db",
+            "campus": "\u6821\u62db",
+            "internship": "\u5b9e\u4e60",
+        }.get(source.variant, "")
         if not employment_type:
             employment_type = normalize_whitespace(
                 _first_nested_name(payload.get("recruit_type"))

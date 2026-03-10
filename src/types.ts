@@ -212,3 +212,10 @@ export interface VerificationWindowPayload {
   title: string;
   message: string;
 }
+
+export interface SourceInfo {
+  key: string;
+  company_name: string;
+  variant: string;
+  label: string;
+}
