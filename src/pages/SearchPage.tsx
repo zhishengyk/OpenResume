@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Search as SearchIcon, ShieldAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { SearchFilterSidebar } from "../components/SearchFilterSidebar";
 import { api } from "../lib/api";
 import { splitCommaValues } from "../lib/utils";
 import type { AutomationMode, PlatformCapability } from "../types";
@@ -50,6 +51,8 @@ export function SearchPage() {
   const [cities, setCities] = useState("");
   const [salaryFloor, setSalaryFloor] = useState("0");
   const [mustHaveKeywords, setMustHaveKeywords] = useState("");
+  const [selectedVariants, setSelectedVariants] = useState<string[]>([]);
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
 
   const platformsQuery = useQuery({
     queryKey: ["platforms"],
@@ -129,6 +132,8 @@ export function SearchPage() {
         cities: splitCommaValues(cities),
         salary_floor: Number(salaryFloor),
         must_have_keywords: splitCommaValues(mustHaveKeywords),
+        source_variants: selectedVariants.length > 0 ? selectedVariants : undefined,
+        source_companies: selectedCompanies.length > 0 ? selectedCompanies : undefined,
       }),
     onSuccess: (session) => {
       queryClient.invalidateQueries({ queryKey: ["search-sessions"] });
@@ -142,8 +147,6 @@ export function SearchPage() {
       : null;
 
   const searchDisabled =
-    selectedPlatformCapabilities.length === 0 ||
-    !modeSupported(selectedPlatformCapabilities, mode) ||
     searchMutation.isPending ||
     (mode === "guided_apply" && !guidedApplyEnabled);
 
@@ -160,7 +163,14 @@ export function SearchPage() {
         </p>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+      <section className="grid gap-6 xl:grid-cols-[0.25fr_1fr_0.9fr]">
+        <SearchFilterSidebar
+          selectedVariants={selectedVariants}
+          selectedCompanies={selectedCompanies}
+          onVariantsChange={setSelectedVariants}
+          onCompaniesChange={setSelectedCompanies}
+        />
+
         <div className="space-y-6">
           <div className="grid gap-4 md:grid-cols-3">
             {modeCards.map((entry) => {

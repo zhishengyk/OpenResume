@@ -53,6 +53,53 @@
 - If page props are empty, search loaded chunks for `api/` paths, tab routes, or `router.push` targets.
 - Follow secondary routes such as `/grad`, `/intern`, or tab-specific pages before concluding that the site has no jobs.
 
+## Recruitment Type Variants (招聘类型变体)
+
+所有网站适配器必须支持三种标准招聘类型变体：
+
+| Variant | 中文标签 | 英文标签 | 说明 |
+|---------|----------|----------|------|
+| `experienced` | 社招 | Social Recruitment | 面向有工作经验的求职者 |
+| `campus` | 校招 | Campus Recruitment | 面向应届毕业生的校园招聘 |
+| `internship` | 实习 | Internship | 面向在校学生的实习岗位 |
+
+### 实现要求
+
+1. **Source 定义**：每个公司的数据源必须定义完整的 variant 配置
+   ```python
+   CareerSiteSource(
+       key="company-experienced",  # 格式: {company}-{variant}
+       company_name="公司名称",
+       entry_url="https://...",
+       source_site="jobs.company.com",
+       collector_key="company",
+       variant="experienced",  # 必须是 experienced/campus/internship 之一
+       label="公司社招",
+   )
+   ```
+
+2. **前端映射**：前端已定义标准标签映射（[SearchFilterSidebar.tsx](file:///d:/my%20project/OpenResume/src/components/SearchFilterSidebar.tsx)）
+   ```typescript
+   const VARIANT_LABELS: Record<string, string> = {
+     experienced: "社招",
+     campus: "校招",
+     internship: "实习",
+   };
+   ```
+
+3. **API 端点**：
+   - `GET /api/sources` - 返回所有可用数据源，包含 variant 字段
+   - `GET /api/source-variants` - 返回可用的招聘类型列表
+   - 搜索时通过 `source_variants` 参数过滤
+
+### 各提供商的 Variant 映射
+
+| 提供商 | experienced | campus | internship |
+|--------|-------------|--------|------------|
+| ByteDance | `/experienced/position` | `/campus/position` | 需要新增 |
+| Taobao/Taotian | 社招入口 | `campusType=freshman` | `campusType=internship` |
+| PDD | 社招入口 | `/campus/grad` | `/campus/intern` |
+
 ## General heuristics
 
 - `candidate_count = 0` usually means the wrong page level, the wrong extractor hint, or a provider-specific token or signature flow that has not been replicated yet.

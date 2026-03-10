@@ -59,6 +59,8 @@ class SearchSessionCreate(BaseModel):
     cities: list[str]
     salary_floor: int = 0
     must_have_keywords: list[str] = Field(default_factory=list)
+    source_variants: list[str] = Field(default_factory=list)
+    source_companies: list[str] = Field(default_factory=list)
 
 
 class SearchEventPayload(BaseModel):
