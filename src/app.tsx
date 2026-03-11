@@ -7,6 +7,7 @@ import { StatusPill } from "./components/StatusPill";
 import { api, apiBaseUrl } from "./lib/api";
 import { HistoryPage } from "./pages/HistoryPage";
 import { ModelConfigPage } from "./pages/ModelConfigPage";
+import { AccountPoolPage } from "./pages/AccountPoolPage";
 import { ResultsPage } from "./pages/ResultsPage";
 import { SearchPage } from "./pages/SearchPage";
 import { SetupPage } from "./pages/SetupPage";
@@ -69,6 +70,7 @@ export default function App() {
               <Route path="/models" element={<ModelConfigPage />} />
               <Route path="/search" element={<SearchPage />} />
               <Route path="/results" element={<ResultsPage />} />
+              <Route path="/assets" element={<AccountPoolPage />} />
               <Route path="/history" element={<HistoryPage />} />
             </Routes>
           </main>

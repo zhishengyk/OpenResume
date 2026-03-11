@@ -1,13 +1,19 @@
 import type {
+  ApplyBatch,
+  ApplyExecutionMode,
   AppState,
   ApplicationAttempt,
   CandidateProfile,
+  CompanyBinding,
   JobMatch,
   LLMConnectionTestResult,
   LLMModelListResult,
   LLMRuntimeProbePayload,
+  OfficialAccount,
+  OfficialSite,
   PlatformCapability,
   PlatformSession,
+  ResumeAsset,
   RiskConsent,
   RiskStatus,
   RuntimeConfig,
@@ -200,6 +206,96 @@ export const api = {
     }),
   cancelAttempt: (attemptId: string) =>
     request<ApplicationAttempt>(`/api/application-attempts/${attemptId}/cancel`, {
+      method: "POST",
+    }),
+  getOfficialSites: () => request<OfficialSite[]>("/api/official-sites"),
+  listOfficialAccounts: (companyKey?: string) =>
+    request<OfficialAccount[]>(
+      companyKey
+        ? `/api/official-accounts?company_key=${encodeURIComponent(companyKey)}`
+        : "/api/official-accounts",
+    ),
+  createOfficialAccount: (payload: {
+    company_key: string;
+    display_name: string;
+    username: string;
+    password?: string | null;
+    is_default: boolean;
+    status: string;
+  }) =>
+    request<OfficialAccount>("/api/official-accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  updateOfficialAccount: (
+    accountId: string,
+    payload: {
+      company_key: string;
+      display_name: string;
+      username: string;
+      password?: string | null;
+      is_default: boolean;
+      status: string;
+    },
+  ) =>
+    request<OfficialAccount>(`/api/official-accounts/${accountId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  deleteOfficialAccount: (accountId: string) =>
+    request<void>(`/api/official-accounts/${accountId}`, {
+      method: "DELETE",
+    }),
+  listResumeAssets: () => request<ResumeAsset[]>("/api/resume-assets"),
+  uploadResumeAsset: async (file: File, label?: string) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (label?.trim()) {
+      formData.append("label", label.trim());
+    }
+    return request<ResumeAsset>("/api/resume-assets", {
+      method: "POST",
+      body: formData,
+    });
+  },
+  deleteResumeAsset: (resumeAssetId: string) =>
+    request<void>(`/api/resume-assets/${resumeAssetId}`, {
+      method: "DELETE",
+    }),
+  listCompanyBindings: () => request<CompanyBinding[]>("/api/company-bindings"),
+  updateCompanyBinding: (companyKey: string, defaultResumeAssetId?: string | null) =>
+    request<CompanyBinding>(`/api/company-bindings/${companyKey}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ default_resume_asset_id: defaultResumeAssetId ?? null }),
+    }),
+  listApplyBatches: (sessionId?: string) =>
+    request<ApplyBatch[]>(
+      sessionId
+        ? `/api/apply-batches?session_id=${encodeURIComponent(sessionId)}`
+        : "/api/apply-batches",
+    ),
+  getApplyBatch: (batchId: string) =>
+    request<ApplyBatch>(`/api/apply-batches/${batchId}`),
+  createApplyBatch: (payload: {
+    listing_ids: string[];
+    execution_mode: ApplyExecutionMode;
+    session_id?: string | null;
+    confirm_auto_submit?: boolean;
+  }) =>
+    request<ApplyBatch>("/api/apply-batches", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  continueApplyBatch: (batchId: string) =>
+    request<ApplyBatch>(`/api/apply-batches/${batchId}/continue`, {
+      method: "POST",
+    }),
+  cancelApplyBatch: (batchId: string) =>
+    request<ApplyBatch>(`/api/apply-batches/${batchId}/cancel`, {
       method: "POST",
     }),
   setEmergencyStop: (active: boolean) =>

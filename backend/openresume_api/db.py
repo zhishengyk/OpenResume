@@ -2,6 +2,7 @@ from collections.abc import Iterator
 import json
 import sqlite3
 
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Session, SQLModel, create_engine
 
 from .config import settings
@@ -504,7 +505,13 @@ def run_compat_migrations() -> None:
 
 def init_db() -> None:
     run_compat_migrations()
-    SQLModel.metadata.create_all(engine)
+    try:
+        SQLModel.metadata.create_all(engine)
+    except OperationalError as error:
+        if "already exists" not in str(error).lower():
+            raise
+        # Test startup can race with a pre-created schema; retry once after the table-exists check.
+        SQLModel.metadata.create_all(engine)
 
 
 def get_session() -> Iterator[Session]:

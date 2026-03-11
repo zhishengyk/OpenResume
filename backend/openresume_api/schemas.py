@@ -247,5 +247,111 @@ class RiskStatusResponse(BaseModel):
     recent_risk_events: int
 
 
+class OfficialSiteResponse(BaseModel):
+    company_key: str
+    company_name: str
+    label: str
+    source_sites: list[str]
+    supported_variants: list[str]
+    supports_auto_submit: bool
+
+
+class OfficialSessionCacheResponse(BaseModel):
+    account_id: str
+    company_key: str
+    storage_state_path: str
+    status: str
+    expires_at: datetime | None = None
+    last_success_at: datetime | None = None
+    last_verified_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class OfficialAccountUpsertRequest(BaseModel):
+    company_key: str
+    display_name: str = ""
+    username: str = ""
+    password: str | None = None
+    is_default: bool = False
+    status: str = "active"
+
+
+class OfficialAccountResponse(BaseModel):
+    id: str
+    company_key: str
+    company_name: str
+    display_name: str
+    username: str
+    has_credentials: bool
+    is_default: bool
+    status: str
+    last_verified_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    session_cache: OfficialSessionCacheResponse | None = None
+
+
+class ResumeAssetResponse(BaseModel):
+    id: str
+    label: str
+    source_filename: str
+    storage_path: str
+    mime_type: str
+    file_size: int
+    content_hash: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class CompanyBindingUpdateRequest(BaseModel):
+    default_resume_asset_id: str | None = None
+
+
+class CompanyBindingResponse(BaseModel):
+    company_key: str
+    default_resume_asset_id: str | None = None
+    updated_at: datetime
+
+
+class ApplyBatchCreateRequest(BaseModel):
+    listing_ids: list[str]
+    execution_mode: str = "semi_auto"
+    session_id: str | None = None
+    confirm_auto_submit: bool = False
+
+
+class ApplyBatchItemResponse(BaseModel):
+    id: str
+    batch_id: str
+    listing_id: str
+    company_key: str
+    account_id: str | None = None
+    resume_asset_id: str | None = None
+    execution_mode: str
+    status: str
+    message: str
+    verification_url: str | None = None
+    launch_url: str | None = None
+    context: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class ApplyBatchResponse(BaseModel):
+    id: str
+    session_id: str | None = None
+    platform: str
+    execution_mode: str
+    status: str
+    message: str
+    total_items: int
+    completed_items: int
+    submitted_items: int
+    created_at: datetime
+    updated_at: datetime
+    items: list[ApplyBatchItemResponse] = Field(default_factory=list)
+
+
 class EmergencyStopRequest(BaseModel):
     active: bool

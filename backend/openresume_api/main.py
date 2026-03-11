@@ -6,7 +6,7 @@ import json
 import re
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
@@ -14,23 +14,39 @@ from sqlmodel import Session, select
 from .config import settings
 from .db import get_session, init_db
 from .models import (
+    ApplyBatch,
+    ApplyBatchItem,
     ApplicationAttempt,
     CandidateProfile,
+    CompanyBinding,
     JobListing,
     JobMatch,
+    OfficialAccount,
+    OfficialSessionCache,
+    ResumeAsset,
     SearchSession,
 )
 from .schemas import (
+    ApplyBatchCreateRequest,
+    ApplyBatchItemResponse,
+    ApplyBatchResponse,
     AppStateResponse,
     ApplicationAttemptResponse,
     CandidateProfileUpdate,
+    CompanyBindingResponse,
+    CompanyBindingUpdateRequest,
     EmergencyStopRequest,
     JobLocationOptionResponse,
     JobMatchResponse,
     LLMConnectionTestResponse,
     LLMModelListResponse,
     LLMRuntimeProbeRequest,
+    OfficialAccountResponse,
+    OfficialAccountUpsertRequest,
+    OfficialSessionCacheResponse,
+    OfficialSiteResponse,
     PlatformSessionResponse,
+    ResumeAssetResponse,
     RiskConsentCreate,
     RiskStatusResponse,
     RuntimeConfigResponse,
@@ -39,7 +55,9 @@ from .schemas import (
     SearchSessionResponse,
     VerificationWindowResponse,
 )
+from .services.apply_batches import apply_batch_service
 from .services.compliance import compliance_service
+from .services.official_assets import official_asset_service
 from .services.events import event_bus
 from .services.platform_gateway import platform_gateway
 from .services.profile import profile_service
@@ -98,6 +116,117 @@ def profile_response(profile: CandidateProfile) -> dict:
         "profile_signature": profile_service.profile_signature(profile),
         "updated_at": profile.updated_at,
     }
+
+
+def official_session_cache_response(
+    cache: OfficialSessionCache | None,
+) -> OfficialSessionCacheResponse | None:
+    if cache is None:
+        return None
+    return OfficialSessionCacheResponse(
+        account_id=cache.account_id,
+        company_key=cache.company_key,
+        storage_state_path=cache.storage_state_path,
+        status=cache.status,
+        expires_at=cache.expires_at,
+        last_success_at=cache.last_success_at,
+        last_verified_at=cache.last_verified_at,
+        created_at=cache.created_at,
+        updated_at=cache.updated_at,
+    )
+
+
+def official_account_response(
+    account: OfficialAccount,
+    cache: OfficialSessionCache | None,
+) -> OfficialAccountResponse:
+    return OfficialAccountResponse(
+        id=account.id,
+        company_key=account.company_key,
+        company_name=account.company_name,
+        display_name=account.display_name,
+        username=account.username,
+        has_credentials=account.has_credentials,
+        is_default=account.is_default,
+        status=account.status,
+        last_verified_at=account.last_verified_at,
+        created_at=account.created_at,
+        updated_at=account.updated_at,
+        session_cache=official_session_cache_response(cache),
+    )
+
+
+def resume_asset_response(asset: ResumeAsset) -> ResumeAssetResponse:
+    return ResumeAssetResponse(
+        id=asset.id,
+        label=asset.label,
+        source_filename=asset.source_filename,
+        storage_path=asset.storage_path,
+        mime_type=asset.mime_type,
+        file_size=asset.file_size,
+        content_hash=asset.content_hash,
+        created_at=asset.created_at,
+        updated_at=asset.updated_at,
+    )
+
+
+def company_binding_response(binding: CompanyBinding) -> CompanyBindingResponse:
+    return CompanyBindingResponse(
+        company_key=binding.company_key,
+        default_resume_asset_id=binding.default_resume_asset_id,
+        updated_at=binding.updated_at,
+    )
+
+
+def apply_batch_item_response(item: ApplyBatchItem) -> ApplyBatchItemResponse:
+    return ApplyBatchItemResponse(
+        id=item.id,
+        batch_id=item.batch_id,
+        listing_id=item.listing_id,
+        company_key=item.company_key,
+        account_id=item.account_id,
+        resume_asset_id=item.resume_asset_id,
+        execution_mode=item.execution_mode,
+        status=item.status,
+        message=item.message,
+        verification_url=item.verification_url,
+        launch_url=item.launch_url,
+        context=item.context or {},
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+    )
+
+
+def apply_batch_response(db: Session, batch: ApplyBatch) -> ApplyBatchResponse:
+    items = apply_batch_service.list_batch_items(db, batch.id)
+    return ApplyBatchResponse(
+        id=batch.id,
+        session_id=batch.session_id,
+        platform=batch.platform,
+        execution_mode=batch.execution_mode,
+        status=batch.status,
+        message=batch.message,
+        total_items=batch.total_items,
+        completed_items=batch.completed_items,
+        submitted_items=batch.submitted_items,
+        created_at=batch.created_at,
+        updated_at=batch.updated_at,
+        items=[apply_batch_item_response(item) for item in items],
+    )
+
+
+def official_account_responses(
+    db: Session,
+    accounts: list[OfficialAccount],
+) -> list[OfficialAccountResponse]:
+    cache_index = {
+        cache.account_id: cache
+        for cache in official_asset_service.list_session_caches(db)
+    }
+    return [
+        official_account_response(account, cache_index.get(account.id))
+        for account in accounts
+    ]
 
 
 def platform_session_response(platform: str, state: dict) -> PlatformSessionResponse:
@@ -514,6 +643,114 @@ def list_source_companies():
     return get_available_companies()
 
 
+@app.get("/api/official-sites", response_model=list[OfficialSiteResponse])
+def list_official_sites():
+    return [
+        OfficialSiteResponse(
+            company_key=site.company_key,
+            company_name=site.company_name,
+            label=site.label,
+            source_sites=list(site.source_sites),
+            supported_variants=list(site.supported_variants),
+            supports_auto_submit=site.supports_auto_submit,
+        )
+        for site in official_asset_service.list_sites()
+    ]
+
+
+@app.get("/api/official-accounts", response_model=list[OfficialAccountResponse])
+def list_official_accounts(db: SessionDep, company_key: str | None = None):
+    accounts = official_asset_service.list_accounts(db, company_key=company_key)
+    return official_account_responses(db, accounts)
+
+
+@app.post("/api/official-accounts", response_model=OfficialAccountResponse)
+def create_official_account(payload: OfficialAccountUpsertRequest, db: SessionDep):
+    account = official_asset_service.upsert_account(
+        db,
+        company_key=payload.company_key,
+        display_name=payload.display_name,
+        username=payload.username,
+        password=payload.password,
+        is_default=payload.is_default,
+        status=payload.status,
+    )
+    cache = official_asset_service.session_cache_for_account(db, account.id)
+    return official_account_response(account, cache)
+
+
+@app.put("/api/official-accounts/{account_id}", response_model=OfficialAccountResponse)
+def update_official_account(
+    account_id: str,
+    payload: OfficialAccountUpsertRequest,
+    db: SessionDep,
+):
+    account = official_asset_service.upsert_account(
+        db,
+        account_id=account_id,
+        company_key=payload.company_key,
+        display_name=payload.display_name,
+        username=payload.username,
+        password=payload.password,
+        is_default=payload.is_default,
+        status=payload.status,
+    )
+    cache = official_asset_service.session_cache_for_account(db, account.id)
+    return official_account_response(account, cache)
+
+
+@app.delete("/api/official-accounts/{account_id}", status_code=204)
+def delete_official_account(account_id: str, db: SessionDep):
+    official_asset_service.delete_account(db, account_id)
+    return Response(status_code=204)
+
+
+@app.get("/api/resume-assets", response_model=list[ResumeAssetResponse])
+def list_resume_assets(db: SessionDep):
+    return [
+        resume_asset_response(asset)
+        for asset in official_asset_service.list_resume_assets(db)
+    ]
+
+
+@app.post("/api/resume-assets", response_model=ResumeAssetResponse)
+async def upload_resume_asset(
+    db: SessionDep,
+    file: UploadFile = File(...),
+    label: str | None = Form(default=None),
+):
+    asset = await official_asset_service.save_resume_asset(db, file=file, label=label)
+    return resume_asset_response(asset)
+
+
+@app.delete("/api/resume-assets/{resume_asset_id}", status_code=204)
+def delete_resume_asset(resume_asset_id: str, db: SessionDep):
+    official_asset_service.delete_resume_asset(db, resume_asset_id)
+    return Response(status_code=204)
+
+
+@app.get("/api/company-bindings", response_model=list[CompanyBindingResponse])
+def list_company_bindings(db: SessionDep):
+    return [
+        company_binding_response(binding)
+        for binding in official_asset_service.list_company_bindings(db)
+    ]
+
+
+@app.put("/api/company-bindings/{company_key}", response_model=CompanyBindingResponse)
+def update_company_binding(
+    company_key: str,
+    payload: CompanyBindingUpdateRequest,
+    db: SessionDep,
+):
+    binding = official_asset_service.update_company_binding(
+        db,
+        company_key=company_key,
+        default_resume_asset_id=payload.default_resume_asset_id,
+    )
+    return company_binding_response(binding)
+
+
 @app.get("/api/platforms/{platform}/capabilities")
 def get_platform_capabilities(platform: str):
     return platform_gateway.get(platform).capability()
@@ -813,6 +1050,44 @@ def get_application_attempt(attempt_id: str, db: SessionDep):
     if not attempt:
         raise HTTPException(status_code=404, detail="未找到投递记录。")
     return attempt_response(attempt)
+
+
+@app.get("/api/apply-batches", response_model=list[ApplyBatchResponse])
+def list_apply_batches(db: SessionDep, session_id: str | None = None):
+    return [
+        apply_batch_response(db, batch)
+        for batch in apply_batch_service.list_batches(db, session_id=session_id)
+    ]
+
+
+@app.post("/api/apply-batches", response_model=ApplyBatchResponse)
+async def create_apply_batch(payload: ApplyBatchCreateRequest, db: SessionDep):
+    batch = await apply_batch_service.create_batch(
+        db,
+        listing_ids=payload.listing_ids,
+        execution_mode=payload.execution_mode,
+        session_id=payload.session_id,
+        confirm_auto_submit=payload.confirm_auto_submit,
+    )
+    return apply_batch_response(db, batch)
+
+
+@app.get("/api/apply-batches/{batch_id}", response_model=ApplyBatchResponse)
+def get_apply_batch(batch_id: str, db: SessionDep):
+    batch = apply_batch_service.get_batch(db, batch_id)
+    return apply_batch_response(db, batch)
+
+
+@app.post("/api/apply-batches/{batch_id}/continue", response_model=ApplyBatchResponse)
+async def continue_apply_batch(batch_id: str, db: SessionDep):
+    batch = await apply_batch_service.continue_batch(db, batch_id)
+    return apply_batch_response(db, batch)
+
+
+@app.post("/api/apply-batches/{batch_id}/cancel", response_model=ApplyBatchResponse)
+def cancel_apply_batch(batch_id: str, db: SessionDep):
+    batch = apply_batch_service.cancel_batch(db, batch_id)
+    return apply_batch_response(db, batch)
 
 
 @app.post(

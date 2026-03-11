@@ -3,6 +3,8 @@ export type AutomationMode =
   | "review_in_browser"
   | "guided_apply";
 
+export type ApplyExecutionMode = "semi_auto" | "auto_submit";
+
 export type SearchSessionStatus =
   | "draft"
   | "running"
@@ -21,8 +23,18 @@ export type ApplicationAttemptStatus =
   | "queued"
   | "running"
   | "prepared"
+  | "submitted"
   | "needs_verification"
   | "blocked"
+  | "failed"
+  | "cancelled";
+
+export type ApplyBatchStatus =
+  | "queued"
+  | "running"
+  | "prepared"
+  | "submitted"
+  | "needs_verification"
   | "failed"
   | "cancelled";
 
@@ -172,6 +184,92 @@ export interface ApplicationAttempt {
   verification_url?: string | null;
   launch_url?: string | null;
   context: Record<string, unknown>;
+}
+
+export interface OfficialSite {
+  company_key: string;
+  company_name: string;
+  label: string;
+  source_sites: string[];
+  supported_variants: string[];
+  supports_auto_submit: boolean;
+}
+
+export interface OfficialSessionCache {
+  account_id: string;
+  company_key: string;
+  storage_state_path: string;
+  status: string;
+  expires_at?: string | null;
+  last_success_at?: string | null;
+  last_verified_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OfficialAccount {
+  id: string;
+  company_key: string;
+  company_name: string;
+  display_name: string;
+  username: string;
+  has_credentials: boolean;
+  is_default: boolean;
+  status: string;
+  last_verified_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  session_cache?: OfficialSessionCache | null;
+}
+
+export interface ResumeAsset {
+  id: string;
+  label: string;
+  source_filename: string;
+  storage_path: string;
+  mime_type: string;
+  file_size: number;
+  content_hash: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompanyBinding {
+  company_key: string;
+  default_resume_asset_id?: string | null;
+  updated_at: string;
+}
+
+export interface ApplyBatchItem {
+  id: string;
+  batch_id: string;
+  listing_id: string;
+  company_key: string;
+  account_id?: string | null;
+  resume_asset_id?: string | null;
+  execution_mode: ApplyExecutionMode;
+  status: ApplyBatchStatus;
+  message: string;
+  verification_url?: string | null;
+  launch_url?: string | null;
+  context: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApplyBatch {
+  id: string;
+  session_id?: string | null;
+  platform: string;
+  execution_mode: ApplyExecutionMode;
+  status: ApplyBatchStatus;
+  message: string;
+  total_items: number;
+  completed_items: number;
+  submitted_items: number;
+  created_at: string;
+  updated_at: string;
+  items: ApplyBatchItem[];
 }
 
 export interface RiskConsent {
