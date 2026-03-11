@@ -4,6 +4,7 @@ import asyncio
 from datetime import datetime, timedelta
 import hashlib
 import json
+from time import perf_counter
 from typing import Any
 
 from fastapi import HTTPException
@@ -90,7 +91,10 @@ class SearchService:
             "raw_payload": dict(draft.raw_payload or {}),
         }
 
-    def _deserialize_drafts(self, payload_json: list[dict[str, Any]]) -> list[NormalizedJobDraft]:
+    def _deserialize_drafts(
+        self,
+        payload_json: list[dict[str, Any]],
+    ) -> list[NormalizedJobDraft]:
         drafts: list[NormalizedJobDraft] = []
         for item in payload_json:
             drafts.append(
@@ -127,13 +131,12 @@ class SearchService:
         profile: CandidateProfile,
     ) -> dict[str, Any]:
         keywords = profile_service.build_search_keyword_basis(payload.job_targets, profile)
-        identity = {
+        return {
             "platforms": sorted(dict.fromkeys(payload.platforms)),
             "source_variants": sorted(dict.fromkeys(payload.source_variants or [])),
             "source_companies": sorted(dict.fromkeys(payload.source_companies or [])),
             "keyword_basis": sorted(dict.fromkeys(keywords)),
         }
-        return identity
 
     @staticmethod
     def _fetch_cache_key(identity: dict[str, Any]) -> str:
@@ -170,7 +173,11 @@ class SearchService:
             source_variants=payload.source_variants,
             source_companies=payload.source_companies,
             force_refresh=payload.force_refresh,
-            summary="搜索已开始，正在抓取并清洗官网职位。",
+            analysis_status="pending",
+            analysis_provider="heuristic",
+            analysis_degraded=False,
+            analysis_notice=None,
+            summary="Search started. Fetching and cleaning jobs.",
         )
         db.add(session)
         db.commit()
@@ -185,23 +192,33 @@ class SearchService:
             verification_opened_at=None,
             blocked_at=None,
             last_retry_at=None,
+            fetch_ms=None,
+            rule_rank_ms=None,
+            persist_ms=None,
+            time_to_ready_ms=None,
+            llm_ms=None,
+            time_to_llm_enriched_ms=None,
         )
-        event_bus.publish(session.id, "search_started", "搜索任务已创建。")
+        event_bus.publish(session.id, "search_started", "Search task created.")
         asyncio.create_task(self._run_pipeline(session.id, payload))
         return session
 
     async def retry_session(self, db: Session, session_id: str) -> SearchSession:
         session = db.get(SearchSession, session_id)
         if not session:
-            raise HTTPException(status_code=404, detail="未找到搜索任务。")
+            raise HTTPException(status_code=404, detail="Search session not found.")
         if session.status == "running":
-            raise HTTPException(status_code=409, detail="搜索任务仍在运行中。")
+            raise HTTPException(status_code=409, detail="Search session is still running.")
 
         meta = self._get_session_meta(db, session_id)
         retry_count = int(meta.get("retry_count") or 0) + 1
         session.status = "running"
+        session.analysis_status = "pending"
+        session.analysis_provider = "heuristic"
+        session.analysis_degraded = False
+        session.analysis_notice = None
         session.blocked_reason = None
-        session.summary = "正在重试本次搜索。"
+        session.summary = "Retrying search."
         session.updated_at = datetime.utcnow()
         db.add(session)
         db.commit()
@@ -214,12 +231,18 @@ class SearchService:
             retryable=False,
             blocked_at=None,
             last_retry_at=datetime.utcnow().isoformat(),
+            fetch_ms=None,
+            rule_rank_ms=None,
+            persist_ms=None,
+            time_to_ready_ms=None,
+            llm_ms=None,
+            time_to_llm_enriched_ms=None,
         )
         event_bus.reset(session_id)
         event_bus.publish(
             session_id,
             "search_restarted",
-            f"第 {retry_count} 次重试已开始。",
+            f"Retry #{retry_count} started.",
             {"retry_count": retry_count},
         )
         asyncio.create_task(self._run_pipeline(session.id, self._payload_from_session(session)))
@@ -228,12 +251,15 @@ class SearchService:
     async def reopen_verification(self, db: Session, session_id: str) -> dict[str, str]:
         session = db.get(SearchSession, session_id)
         if not session:
-            raise HTTPException(status_code=404, detail="未找到搜索任务。")
+            raise HTTPException(status_code=404, detail="Search session not found.")
 
         meta = self._get_session_meta(db, session_id)
         verification_url = meta.get("verification_url")
         if not verification_url:
-            raise HTTPException(status_code=409, detail="当前搜索任务没有可重新打开的验证窗口。")
+            raise HTTPException(
+                status_code=409,
+                detail="This session does not have a verification window to reopen.",
+            )
 
         self._set_session_meta(
             db,
@@ -244,12 +270,12 @@ class SearchService:
         event_bus.publish(
             session_id,
             "verification_opened",
-            "验证窗口已可在应用内重新打开。",
+            "Verification window is ready to reopen.",
         )
         return {
             "url": str(verification_url),
-            "title": str(meta.get("verification_title") or "搜索验证"),
-            "message": "请打开验证窗口完成验证，然后再重试搜索。",
+            "title": str(meta.get("verification_title") or "Search verification"),
+            "message": "Complete verification in the popup and retry the search.",
         }
 
     async def _fetch_platform_jobs(
@@ -280,6 +306,7 @@ class SearchService:
                 raise
             except Exception as error:
                 errors.append(f"{adapter.platform}: {error}")
+
         if drafts:
             fresh_now = datetime.utcnow()
             serialized = [self._serialize_draft(draft) for draft in drafts]
@@ -311,9 +338,10 @@ class SearchService:
                 )
             db.commit()
             return drafts, False
+
         raise HTTPException(
             status_code=503,
-            detail="；".join(errors) or "所选平台暂时没有抓取到可用职位。",
+            detail="; ".join(errors) or "Selected platforms returned no usable jobs.",
         )
 
     async def _run_pipeline(self, session_id: str, payload: SearchSessionCreate) -> None:
@@ -322,30 +350,32 @@ class SearchService:
             if not session:
                 return
 
+            pipeline_started_at = perf_counter()
             try:
                 profile = db.get(CandidateProfile, 1) or CandidateProfile(id=1)
+
                 event_bus.publish(
                     session_id,
                     "fetching_jobs",
-                    "正在抓取官网职位并进行代码级清洗。",
+                    "Fetching jobs from official career sites.",
                 )
-                raw_jobs, fetch_cache_hit = await self._fetch_platform_jobs(
-                    db,
-                    payload,
-                    profile,
-                )
+                fetch_started_at = perf_counter()
+                raw_jobs, fetch_cache_hit = await self._fetch_platform_jobs(db, payload, profile)
+                fetch_ms = int((perf_counter() - fetch_started_at) * 1000)
+
                 if payload.force_refresh:
                     event_bus.publish(
                         session_id,
                         "fetch_force_refresh",
-                        "已跳过职位抓取缓存，执行实时抓取。",
+                        "Fetch cache bypassed. Running a live fetch.",
                     )
                 elif fetch_cache_hit:
                     event_bus.publish(
                         session_id,
                         "fetch_cache_hit",
-                        "命中职位抓取缓存，直接复用近 60 分钟结果。",
+                        "Fetch cache hit. Reusing recent results.",
                     )
+
                 official_stats: dict[str, int] = {}
                 for platform in payload.platforms:
                     adapter = platform_gateway.get(platform)
@@ -358,16 +388,16 @@ class SearchService:
                         session_id,
                         "code_cleaned",
                         (
-                            "采集统计："
-                            f"{official_stats.get('sources_selected', 0)} 个来源，"
-                            f"{official_stats.get('sources_with_jobs', 0)} 个有职位，"
-                            f"{official_stats.get('source_errors', 0)} 个报错，"
-                            f"{official_stats.get('jobs_before_dedupe', 0)} 条原始职位，"
-                            f"{official_stats.get('jobs_after_dedupe', 0)} 条进入排序。"
+                            f"Sources: {official_stats.get('sources_selected', 0)}, "
+                            f"with jobs: {official_stats.get('sources_with_jobs', 0)}, "
+                            f"errors: {official_stats.get('source_errors', 0)}, "
+                            f"raw jobs: {official_stats.get('jobs_before_dedupe', 0)}, "
+                            f"ranked jobs: {official_stats.get('jobs_after_dedupe', 0)}."
                         ),
                         official_stats,
                     )
 
+                rule_started_at = perf_counter()
                 rule_matches = matching_service.filter_and_score(
                     profile=profile,
                     drafts=raw_jobs,
@@ -376,17 +406,22 @@ class SearchService:
                     requested_keywords=payload.must_have_keywords,
                     salary_floor=payload.salary_floor,
                 )
+                rule_rank_ms = int((perf_counter() - rule_started_at) * 1000)
+
                 db.exec(delete(JobMatch).where(JobMatch.session_id == session_id))
                 db.exec(delete(JobListing).where(JobListing.session_id == session_id))
                 db.commit()
 
+                persist_started_at = perf_counter()
                 stored_jobs: list[JobListing] = []
                 stored_matches: list[JobMatch] = []
+                default_platform = payload.platforms[0] if payload.platforms else "official"
+
                 for rule_match in rule_matches:
                     draft = rule_match.draft
                     job = JobListing(
                         session_id=session_id,
-                        platform=draft.raw_payload.get("platform", payload.platforms[0]),
+                        platform=str(draft.raw_payload.get("platform") or default_platform),
                         source_company=draft.source_company,
                         source_site=draft.source_site,
                         job_id=draft.job_id,
@@ -410,42 +445,186 @@ class SearchService:
                         crawl_time=draft.crawl_time or datetime.utcnow(),
                         raw_payload=draft.raw_payload,
                     )
-                    db.add(job)
-                    db.flush()
                     stored_jobs.append(job)
-
-                    match = JobMatch(
-                        session_id=session_id,
-                        job_id=job.id,
-                        rule_score=rule_match.rule_score,
-                        final_score=rule_match.rule_score,
-                        highlights=rule_match.highlights,
-                        missing_keywords=rule_match.missing_keywords,
-                        risk_flags=rule_match.risk_flags,
+                    stored_matches.append(
+                        JobMatch(
+                            session_id=session_id,
+                            job_id=job.id,
+                            rule_score=rule_match.rule_score,
+                            final_score=rule_match.rule_score,
+                            highlights=rule_match.highlights,
+                            missing_keywords=rule_match.missing_keywords,
+                            risk_flags=rule_match.risk_flags,
+                        )
                     )
-                    db.add(match)
-                    db.flush()
-                    stored_matches.append(match)
+
+                if stored_jobs:
+                    db.add_all(stored_jobs)
+                if stored_matches:
+                    db.add_all(stored_matches)
                 db.commit()
+                persist_ms = int((perf_counter() - persist_started_at) * 1000)
 
                 event_bus.publish(
                     session_id,
                     "rule_ranked",
-                    f"清洗和规则排序后保留了 {len(stored_jobs)} 条职位。",
+                    f"Rule ranking kept {len(stored_jobs)} jobs.",
                     {"matches": len(stored_jobs)},
                 )
 
-                llm_target_jobs = stored_jobs[:LLM_ANALYSIS_LIMIT]
-                analysis_batch = await llm_service.analyze_jobs(db, profile, llm_target_jobs)
-                llm_by_job = {
-                    result.job_id: result
-                    for result in analysis_batch.results
+                time_to_ready_ms = int((perf_counter() - pipeline_started_at) * 1000)
+                session.status = "ready"
+                session.analysis_status = "pending"
+                session.analysis_provider = "heuristic"
+                session.analysis_degraded = False
+                session.analysis_notice = None
+                session.blocked_reason = None
+                session.summary = "Search results are ready. LLM analysis is running in background."
+                session.updated_at = datetime.utcnow()
+                db.add(session)
+                db.commit()
+                self._set_session_meta(
+                    db,
+                    session_id,
+                    retryable=False,
+                    verification_url=None,
+                    verification_title=None,
+                    verification_opened_at=None,
+                    blocked_at=None,
+                    fetch_ms=fetch_ms,
+                    rule_rank_ms=rule_rank_ms,
+                    persist_ms=persist_ms,
+                    time_to_ready_ms=time_to_ready_ms,
+                )
+                event_bus.publish(
+                    session_id,
+                    "ready",
+                    "Results are ready. LLM analysis will update them in background.",
+                )
+                asyncio.create_task(self._run_llm_enrichment(session_id))
+            except PlatformBlockedError as error:
+                detail = str(error)
+                verification_url = error.verification_url
+                primary_platform = payload.platforms[0] if payload.platforms else "official"
+                risk_control_service.record_risk_event(
+                    db,
+                    primary_platform,
+                    "blocked",
+                    detail,
+                )
+                self._set_session_meta(
+                    db,
+                    session_id,
+                    retryable=True,
+                    verification_url=verification_url,
+                    verification_title="Search verification",
+                    blocked_at=datetime.utcnow().isoformat(),
+                    verification_opened_at=None,
+                )
+                session.status = "blocked"
+                session.analysis_status = "failed"
+                session.blocked_reason = detail
+                session.summary = detail
+                session.updated_at = datetime.utcnow()
+                db.add(session)
+                db.commit()
+                event_bus.publish(
+                    session_id,
+                    "blocked",
+                    detail,
+                    {
+                        "verification_url": verification_url,
+                        "retryable": True,
+                    },
+                )
+            except Exception as error:
+                detail = str(error) or "Search task failed."
+                db.exec(delete(JobMatch).where(JobMatch.session_id == session_id))
+                db.exec(delete(JobListing).where(JobListing.session_id == session_id))
+                db.commit()
+                session.status = "failed"
+                session.analysis_status = "failed"
+                session.blocked_reason = None
+                session.summary = detail
+                session.updated_at = datetime.utcnow()
+                db.add(session)
+                db.commit()
+                self._set_session_meta(
+                    db,
+                    session_id,
+                    retryable=False,
+                    verification_url=None,
+                    verification_title=None,
+                    verification_opened_at=None,
+                )
+                event_bus.publish(session_id, "failed", detail)
+
+    async def _run_llm_enrichment(self, session_id: str) -> None:
+        llm_started_at = perf_counter()
+        with Session(db_module.engine) as db:
+            session = db.get(SearchSession, session_id)
+            if not session or session.status != "ready":
+                return
+
+            session.analysis_status = "running"
+            session.updated_at = datetime.utcnow()
+            db.add(session)
+            db.commit()
+            event_bus.publish(
+                session_id,
+                "llm_started",
+                "LLM analysis started in background.",
+            )
+
+            try:
+                profile = db.get(CandidateProfile, 1) or CandidateProfile(id=1)
+                match_rows = db.exec(
+                    select(JobMatch)
+                    .where(JobMatch.session_id == session_id)
+                    .order_by(JobMatch.final_score.desc())
+                ).all()
+                jobs_by_id = {
+                    job.id: job
+                    for job in db.exec(
+                        select(JobListing).where(JobListing.session_id == session_id)
+                    ).all()
                 }
+                job_match_pairs = [
+                    (jobs_by_id[match.job_id], match)
+                    for match in match_rows
+                    if match.job_id in jobs_by_id
+                ]
+                if not job_match_pairs:
+                    session.analysis_status = "ready"
+                    session.updated_at = datetime.utcnow()
+                    db.add(session)
+                    db.commit()
+                    self._set_session_meta(
+                        db,
+                        session_id,
+                        llm_ms=0,
+                        time_to_llm_enriched_ms=int(
+                            self._get_session_meta(db, session_id).get("time_to_ready_ms") or 0
+                        ),
+                    )
+                    return
+
+                target_pairs = job_match_pairs[:LLM_ANALYSIS_LIMIT]
+                analysis_batch = await llm_service.analyze_jobs(
+                    db,
+                    profile,
+                    [job for job, _match in target_pairs],
+                )
+                llm_by_job = {result.job_id: result for result in analysis_batch.results}
                 provider = analysis_batch.metadata.provider
                 degraded = analysis_batch.metadata.degraded
                 notice = analysis_batch.metadata.notice
 
-                for job, match in zip(stored_jobs, stored_matches, strict=True):
+                db.refresh(session)
+                if session.status != "ready" or session.analysis_status != "running":
+                    return
+
+                for job, match in job_match_pairs:
                     llm_result = llm_by_job.get(job.job_id)
                     if llm_result:
                         match.llm_score = llm_result.llm_score
@@ -473,91 +652,51 @@ class SearchService:
                     db.add(match)
                 db.commit()
 
-                session.status = "ready"
-                session.updated_at = datetime.utcnow()
-                session.blocked_reason = None
-                session.summary = "搜索完成，职位已清洗并排序。"
+                llm_ms = int((perf_counter() - llm_started_at) * 1000)
+                ready_ms = int(self._get_session_meta(db, session_id).get("time_to_ready_ms") or 0)
+                session.analysis_status = "ready"
                 session.analysis_provider = provider
                 session.analysis_degraded = degraded
                 session.analysis_notice = notice
+                session.summary = "Search finished. LLM analysis has been applied."
+                session.updated_at = datetime.utcnow()
                 db.add(session)
                 db.commit()
                 self._set_session_meta(
                     db,
                     session_id,
-                    retryable=False,
-                    verification_url=None,
-                    verification_title=None,
-                    verification_opened_at=None,
-                    blocked_at=None,
+                    llm_ms=llm_ms,
+                    time_to_llm_enriched_ms=ready_ms + llm_ms,
                 )
                 event_bus.publish(
                     session_id,
                     "llm_enriched",
-                    f"排序已完成，分析提供方：{provider}。",
+                    f"LLM analysis applied with provider: {provider}.",
                     {
-                        "matches": len(stored_jobs),
-                        "llm_analyzed": len(llm_target_jobs),
+                        "matches": len(job_match_pairs),
+                        "llm_analyzed": len(target_pairs),
                         "analysis_provider": provider,
                         "analysis_degraded": degraded,
                         "analysis_notice": notice,
                     },
                 )
-                event_bus.publish(session_id, "ready", "搜索任务已完成。")
-            except PlatformBlockedError as error:
-                detail = str(error)
-                verification_url = error.verification_url
-                primary_platform = payload.platforms[0] if payload.platforms else "official"
-                risk_control_service.record_risk_event(
-                    db,
-                    primary_platform,
-                    "blocked",
-                    detail,
-                )
-                self._set_session_meta(
-                    db,
-                    session_id,
-                    retryable=True,
-                    verification_url=verification_url,
-                    verification_title="搜索验证",
-                    blocked_at=datetime.utcnow().isoformat(),
-                    verification_opened_at=None,
-                )
-                session.status = "blocked"
-                session.blocked_reason = detail
-                session.summary = detail
-                session.updated_at = datetime.utcnow()
-                db.add(session)
-                db.commit()
-                event_bus.publish(
-                    session_id,
-                    "blocked",
-                    detail,
-                    {
-                        "verification_url": verification_url,
-                        "retryable": True,
-                    },
-                )
             except Exception as error:
-                detail = str(error) or "搜索任务失败。"
-                db.exec(delete(JobMatch).where(JobMatch.session_id == session_id))
-                db.exec(delete(JobListing).where(JobListing.session_id == session_id))
-                db.commit()
-                session.status = "failed"
-                session.blocked_reason = None
-                session.summary = detail
-                session.updated_at = datetime.utcnow()
-                db.add(session)
-                db.commit()
+                detail = str(error) or "LLM analysis failed."
+                db.refresh(session)
+                if session.status == "ready":
+                    session.analysis_status = "failed"
+                    session.analysis_degraded = True
+                    session.analysis_notice = detail
+                    session.summary = "Search finished, but background LLM analysis failed."
+                    session.updated_at = datetime.utcnow()
+                    db.add(session)
+                    db.commit()
                 self._set_session_meta(
                     db,
                     session_id,
-                    retryable=False,
-                    verification_url=None,
-                    verification_title=None,
-                    verification_opened_at=None,
+                    llm_ms=int((perf_counter() - llm_started_at) * 1000),
                 )
-                event_bus.publish(session_id, "failed", detail)
+                event_bus.publish(session_id, "llm_failed", detail)
 
 
 search_service = SearchService()

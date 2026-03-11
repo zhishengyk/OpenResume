@@ -55,6 +55,9 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
         analysis_notice_expr = (
             "analysis_notice" if "analysis_notice" in columns else "NULL"
         )
+        analysis_status_expr = (
+            "analysis_status" if "analysis_status" in columns else "'ready'"
+        )
         source_variants_expr = (
             "source_variants" if "source_variants" in columns else "NULL"
         )
@@ -81,6 +84,7 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                 {force_refresh_expr},
                 blocked_reason,
                 summary,
+                {analysis_status_expr},
                 {analysis_provider_expr},
                 {analysis_degraded_expr},
                 {analysis_notice_expr},
@@ -105,6 +109,7 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                 force_refresh INTEGER NOT NULL DEFAULT 0,
                 blocked_reason TEXT,
                 summary TEXT,
+                analysis_status TEXT NOT NULL DEFAULT 'ready',
                 analysis_provider TEXT NOT NULL DEFAULT 'heuristic',
                 analysis_degraded INTEGER NOT NULL DEFAULT 0,
                 analysis_notice TEXT,
@@ -129,6 +134,7 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                 force_refresh,
                 blocked_reason,
                 summary,
+                analysis_status,
                 analysis_provider,
                 analysis_degraded,
                 analysis_notice,
@@ -155,12 +161,13 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                     force_refresh,
                     blocked_reason,
                     summary,
+                    analysis_status,
                     analysis_provider,
                     analysis_degraded,
                     analysis_notice,
                     created_at,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
@@ -176,6 +183,7 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                     force_refresh or 0,
                     blocked_reason,
                     summary,
+                    analysis_status or "ready",
                     analysis_provider or "heuristic",
                     analysis_degraded or 0,
                     analysis_notice,
@@ -192,6 +200,12 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
         "searchsession",
         "requested_platforms",
         "requested_platforms TEXT",
+    )
+    _add_column_if_missing(
+        connection,
+        "searchsession",
+        "analysis_status",
+        "analysis_status TEXT NOT NULL DEFAULT 'ready'",
     )
     _add_column_if_missing(
         connection,
@@ -264,6 +278,9 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
         )
     connection.execute(
         "UPDATE searchsession SET force_refresh = COALESCE(force_refresh, 0)"
+    )
+    connection.execute(
+        "UPDATE searchsession SET analysis_status = COALESCE(NULLIF(analysis_status, ''), 'ready')"
     )
 
 

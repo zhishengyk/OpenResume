@@ -36,6 +36,7 @@ from .schemas import (
     RuntimeConfigResponse,
     RuntimeConfigUpdateRequest,
     SearchSessionCreate,
+    SearchSessionResponse,
     VerificationWindowResponse,
 )
 from .services.compliance import compliance_service
@@ -554,7 +555,7 @@ def get_risk_status(platform: str, db: SessionDep):
     return RiskStatusResponse(**risk_control_service.current_status(db, platform))
 
 
-@app.post("/api/search-sessions")
+@app.post("/api/search-sessions", response_model=SearchSessionResponse)
 async def create_search_session(payload: SearchSessionCreate, db: SessionDep):
     platforms = list(dict.fromkeys(payload.platforms))
     if not platforms:
@@ -598,12 +599,12 @@ async def create_search_session(payload: SearchSessionCreate, db: SessionDep):
     return await search_service.create_session(db, normalized_payload)
 
 
-@app.get("/api/search-sessions")
+@app.get("/api/search-sessions", response_model=list[SearchSessionResponse])
 def list_search_sessions(db: SessionDep):
     return db.exec(select(SearchSession).order_by(SearchSession.created_at.desc())).all()
 
 
-@app.get("/api/search-sessions/{session_id}")
+@app.get("/api/search-sessions/{session_id}", response_model=SearchSessionResponse)
 def get_search_session(session_id: str, db: SessionDep):
     session = db.get(SearchSession, session_id)
     if not session:
@@ -611,7 +612,7 @@ def get_search_session(session_id: str, db: SessionDep):
     return session
 
 
-@app.post("/api/search-sessions/{session_id}/retry")
+@app.post("/api/search-sessions/{session_id}/retry", response_model=SearchSessionResponse)
 async def retry_search_session(session_id: str, db: SessionDep):
     return await search_service.retry_session(db, session_id)
 

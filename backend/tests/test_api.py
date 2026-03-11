@@ -7,7 +7,7 @@ from openresume_api import db as db_module
 from openresume_api.adapters.base import NormalizedJobDraft, PlatformBlockedError
 from openresume_api.adapters.official import official_adapter
 from openresume_api.career_collectors import career_collector_runner
-from openresume_api.models import CandidateProfile, JobListing, SearchFetchCache
+from openresume_api.models import AppSetting, CandidateProfile, JobListing, SearchFetchCache
 from openresume_api.schemas import SearchSessionCreate
 from openresume_api.services.llm import (
     AnalysisBatch,
@@ -18,6 +18,7 @@ from openresume_api.services.llm import (
 )
 from openresume_api.services.profile import profile_service
 from openresume_api.services.runtime_config import runtime_config_service
+from openresume_api.services.search import search_service
 from sqlmodel import Session, select
 
 
@@ -32,6 +33,21 @@ def wait_for_session_status(client, session_id: str, expected: str, timeout: flo
             return latest
         time.sleep(0.15)
     raise AssertionError(f"session {session_id} did not reach status={expected}: {latest}")
+
+
+def wait_for_analysis_status(client, session_id: str, expected: str, timeout: float = 5.0):
+    deadline = time.time() + timeout
+    latest = None
+    while time.time() < deadline:
+        response = client.get(f"/api/search-sessions/{session_id}")
+        assert response.status_code == 200
+        latest = response.json()
+        if latest["analysis_status"] == expected:
+            return latest
+        time.sleep(0.15)
+    raise AssertionError(
+        f"session {session_id} did not reach analysis_status={expected}: {latest}"
+    )
 
 
 def upsert_profile(client, *, with_resume: bool = False):
@@ -361,20 +377,44 @@ def test_resume_upload_falls_back_when_profile_enhancement_fails(client, monkeyp
     assert payload["project_experiences"]
 
 
-def test_search_pipeline_returns_matches_and_degraded_notice(client, monkeypatch):
+def test_search_pipeline_marks_ready_before_background_llm_finishes(client, monkeypatch):
     upsert_profile(client)
 
     async def fake_search_jobs(search, profile):
         return [sample_draft()]
 
+    async def fake_analyze_jobs(db, profile, jobs):
+        await asyncio.sleep(0.5)
+        job_list = list(jobs)
+        return AnalysisBatch(
+            metadata=AnalysisMetadata(
+                provider="heuristic",
+                degraded=True,
+                notice="background analysis complete",
+            ),
+            results=[
+                LLMResult(
+                    cache_key=f"cache-{job.job_id}",
+                    job_id=job.job_id,
+                    llm_score=88.0,
+                    highlights=["React"],
+                    missing_keywords=[],
+                    risk_flags=[],
+                    llm_summary="ranked",
+                )
+                for job in job_list
+            ],
+        )
+
     monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+    monkeypatch.setattr(llm_service, "analyze_jobs", fake_analyze_jobs)
 
     session = create_search_session(client)
     assert session.status_code == 200
 
     ready = wait_for_session_status(client, session.json()["id"], "ready")
-    assert ready["analysis_degraded"] is True
-    assert ready["analysis_provider"] == "heuristic"
+    assert ready["analysis_status"] in {"pending", "running"}
+    assert ready["analysis_degraded"] is False
 
     matches = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
     assert matches.status_code == 200
@@ -386,7 +426,72 @@ def test_search_pipeline_returns_matches_and_degraded_notice(client, monkeypatch
     assert payload[0]["job_id"] == "official-live-001"
     assert payload[0]["source_company"] == "ByteDance"
     assert payload[0]["description_text"]
-    assert payload[0]["analysis_degraded"] is True
+    assert payload[0]["llm_score"] is None
+    assert payload[0]["analysis_degraded"] is False
+
+    enriched = wait_for_analysis_status(client, session.json()["id"], "ready")
+    assert enriched["analysis_provider"] == "heuristic"
+    assert enriched["analysis_degraded"] is True
+    assert enriched["analysis_notice"] == "background analysis complete"
+
+    enriched_matches = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    assert enriched_matches.status_code == 200
+    enriched_payload = enriched_matches.json()
+    assert enriched_payload[0]["llm_score"] == 88.0
+    assert enriched_payload[0]["analysis_degraded"] is True
+
+
+def test_search_pipeline_records_stage_timings_in_session_meta(client, monkeypatch):
+    upsert_profile(client)
+
+    async def fake_search_jobs(search, profile):
+        return sample_drafts(10)
+
+    async def fake_analyze_jobs(db, profile, jobs):
+        await asyncio.sleep(0.2)
+        job_list = list(jobs)
+        return AnalysisBatch(
+            metadata=AnalysisMetadata(
+                provider="heuristic",
+                degraded=True,
+                notice="timed",
+            ),
+            results=[
+                LLMResult(
+                    cache_key=f"cache-{job.job_id}",
+                    job_id=job.job_id,
+                    llm_score=77.0,
+                    highlights=["React"],
+                    missing_keywords=[],
+                    risk_flags=[],
+                    llm_summary="timed",
+                )
+                for job in job_list
+            ],
+        )
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+    monkeypatch.setattr(llm_service, "analyze_jobs", fake_analyze_jobs)
+
+    session = create_search_session(client, salary_floor=0, must_have_keywords=[], cities=[])
+    assert session.status_code == 200
+    session_id = session.json()["id"]
+
+    wait_for_session_status(client, session_id, "ready")
+    wait_for_analysis_status(client, session_id, "ready")
+
+    with Session(db_module.engine) as db:
+        setting = db.get(AppSetting, search_service._session_meta_key(session_id))
+        assert setting is not None
+        meta = dict(setting.value or {})
+
+    assert isinstance(meta.get("fetch_ms"), int)
+    assert isinstance(meta.get("rule_rank_ms"), int)
+    assert isinstance(meta.get("persist_ms"), int)
+    assert isinstance(meta.get("time_to_ready_ms"), int)
+    assert isinstance(meta.get("llm_ms"), int)
+    assert isinstance(meta.get("time_to_llm_enriched_ms"), int)
+    assert meta["time_to_llm_enriched_ms"] >= meta["time_to_ready_ms"]
 
 
 def test_search_matches_merge_same_job_id_with_multi_locations(client, monkeypatch):
@@ -971,6 +1076,7 @@ def test_search_pipeline_only_applies_llm_to_first_120_matches(client, monkeypat
     assert session.status_code == 200
 
     wait_for_session_status(client, session.json()["id"], "ready")
+    wait_for_analysis_status(client, session.json()["id"], "ready")
     matches = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
     assert matches.status_code == 200
 
@@ -979,6 +1085,37 @@ def test_search_pipeline_only_applies_llm_to_first_120_matches(client, monkeypat
     assert observed["jobs"] == 120
     assert sum(1 for item in payload if item["llm_score"] is not None) == 120
     assert sum(1 for item in payload if item["llm_score"] is None) == 10
+
+
+def test_background_llm_failure_does_not_roll_back_ready_session(client, monkeypatch):
+    upsert_profile(client)
+
+    async def fake_search_jobs(search, profile):
+        return [sample_draft()]
+
+    async def fake_analyze_jobs(db, profile, jobs):
+        await asyncio.sleep(0.2)
+        raise RuntimeError("background llm crashed")
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+    monkeypatch.setattr(llm_service, "analyze_jobs", fake_analyze_jobs)
+
+    session = create_search_session(client)
+    assert session.status_code == 200
+
+    ready = wait_for_session_status(client, session.json()["id"], "ready")
+    assert ready["analysis_status"] in {"pending", "running"}
+
+    failed = wait_for_analysis_status(client, session.json()["id"], "failed")
+    assert failed["status"] == "ready"
+    assert failed["analysis_degraded"] is True
+    assert "background llm crashed" in (failed["analysis_notice"] or "")
+
+    matches = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    assert matches.status_code == 200
+    payload = matches.json()
+    assert len(payload) == 1
+    assert payload[0]["llm_score"] is None
 
 
 def test_disabled_platform_is_rejected(client):
@@ -1015,9 +1152,10 @@ def test_openai_failure_falls_back_to_heuristic(client, monkeypatch):
     session = create_search_session(client)
     assert session.status_code == 200
 
-    ready = wait_for_session_status(client, session.json()["id"], "ready")
-    assert ready["analysis_degraded"] is True
-    assert "LLM" in (ready["analysis_notice"] or "")
+    wait_for_session_status(client, session.json()["id"], "ready")
+    enriched = wait_for_analysis_status(client, session.json()["id"], "ready")
+    assert enriched["analysis_degraded"] is True
+    assert "LLM" in (enriched["analysis_notice"] or "")
 
     matches = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
     assert matches.status_code == 200
