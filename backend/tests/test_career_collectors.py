@@ -848,6 +848,93 @@ class TestMeituanCollector:
     def test_collector_key_is_meituan(self):
         assert meituan_collector.collector_key == "meituan"
 
+    def test_collect_uses_source_job_limit_and_bulk_details(self, monkeypatch):
+        search = SearchSessionCreate(
+            platforms=["official"],
+            mode="recommend_only",
+            job_targets=["Frontend Engineer"],
+            cities=["Shanghai"],
+            salary_floor=0,
+            must_have_keywords=[],
+            source_variants=["experienced"],
+            company_job_limit=4,
+        )
+        source = make_source(
+            key="test",
+            collector_key="meituan",
+            variant="experienced",
+            company_name="美团",
+            entry_url="https://zhaopin.meituan.com/web/social",
+            source_site="zhaopin.meituan.com",
+        )
+        observed: dict[str, object] = {}
+
+        class FakeProvider:
+            def __init__(self, **kwargs):
+                observed["init"] = kwargs
+
+            def collect_jobs(self, *, variant: str, keywords: list[str], limit: int | None):
+                observed["collect"] = {
+                    "variant": variant,
+                    "keywords": keywords,
+                    "limit": limit,
+                }
+                return [
+                    {"jobUnionId": "job-1", "name": "Frontend Engineer"},
+                    {"jobUnionId": "job-2", "name": "Frontend Engineer II"},
+                ]
+
+            def get_job_details(
+                self,
+                *,
+                variant: str,
+                job_ids: list[str],
+                worker_count: int,
+            ) -> dict[str, dict[str, object]]:
+                observed["details"] = {
+                    "variant": variant,
+                    "job_ids": job_ids,
+                    "worker_count": worker_count,
+                }
+                return {
+                    "job-1": {
+                        "jobDuty": "Build products",
+                        "jobRequirement": "React TypeScript",
+                    },
+                    "job-2": {
+                        "jobDuty": "Ship features",
+                        "jobRequirement": "React",
+                    },
+                }
+
+            def detail_url(self, *, variant: str, job_id: str) -> str:
+                return f"https://zhaopin.meituan.com/web/position/detail?jobUnionId={job_id}"
+
+        monkeypatch.setattr(
+            "openresume_api.career_collectors.companies.meituan.MeituanOfficialClient",
+            FakeProvider,
+        )
+
+        collector = MeituanCollector()
+        records = collector.collect(
+            source,
+            search,
+            CandidateProfile(id=1),
+            datetime(2026, 3, 10),
+        )
+
+        assert len(records) == 2
+        assert observed["collect"] == {
+            "variant": "experienced",
+            "keywords": ["Frontend Engineer"],
+            "limit": 4,
+        }
+        assert observed["details"] == {
+            "variant": "experienced",
+            "job_ids": ["job-1", "job-2"],
+            "worker_count": 2,
+        }
+
     def test_to_record_maps_fields(self):
         collector = MeituanCollector()
         source = make_source(
