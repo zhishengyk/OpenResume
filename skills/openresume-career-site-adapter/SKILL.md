@@ -71,8 +71,19 @@ When adding a new company source, define all three variants in `manifest.py` if 
 ## Notes From 2026-03-11
 
 - When multiple Alibaba-group sites share the same shell, extract a reusable provider first. The stable seam is `base_url + variant channel config`; the token/csrf flow stays identical.
+- Alibaba-shell payload fields are not fully uniform across brands:
+  - Some sites require `key` (not `keyword`) for query text.
+  - Off-campus requests often need extra empty filter fields (`batchId/categories/deptCodes/regions/subCategories`) to match browser behavior.
+  - AMap/Eleme/AIDC social channels currently use `channel=group_official_site` in live requests.
 - For PDD, do not trust the first relative `api/recruit/...` strings you see in the page chunks. Confirm the runtime network path; the actual browser requests prepend `/api/careers/`.
 - For Meituan, the campus homepage does not itself prove campus-only filtering. Confirm the list/detail APIs first, then decide whether variant labeling is a site-level truth or just an entry-page label.
+- Kuaishou has multi-channel intern flows:
+  - `zhaopin.kuaishou.cn/#/official/trainee` uses the social API with `positionNatureCode=C002`.
+  - `campus.kuaishou.cn` uses campus API `positionNatureCode=intern`.
+  - Internship extraction should merge both channels and dedupe by job id.
+- Kuaishou campus can legitimately return very low counts (for example fulltime=2, intern=1 at the time of validation); do not treat this as parser failure unless request parity is broken.
+- JD campus detail endpoint uses `publishId` in `/api/wx/position/detail/{id}`. Using `reqId` may return structurally successful but empty bodies.
+- Ant Group search currently returns empty when `pageSize` is too large in some flows; cap to small page size (for example `<=10`) before judging the source as empty.
 - Live smoke may need a repo-local fallback. If the standalone smoke script drifts behind the repo and imports removed modules, call `OfficialAdapter.search_jobs()` directly with `source_companies` and `source_variants` to validate real drafts.
 
 ## Reference

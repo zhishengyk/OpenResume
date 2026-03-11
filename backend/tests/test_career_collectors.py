@@ -13,11 +13,17 @@ from openresume_api.career_collectors.companies.alibaba_holding import (
     AlibabaHoldingCollector,
     alibaba_holding_collector,
 )
+from openresume_api.career_collectors.companies.aidc import aidc_collector
+from openresume_api.career_collectors.companies.amap import amap_collector
+from openresume_api.career_collectors.companies.ant import ant_collector
+from openresume_api.career_collectors.companies.eleme import eleme_collector
 from openresume_api.career_collectors.companies.bytedance import (
     BytedanceCollector,
     _first_nested_name,
     bytedance_collector,
 )
+from openresume_api.career_collectors.companies.jd import jd_collector
+from openresume_api.career_collectors.companies.kuaishou import kuaishou_collector
 from openresume_api.career_collectors.companies.meituan import (
     MeituanCollector,
     meituan_collector,
@@ -119,6 +125,24 @@ def test_manifest_registers_bytedance_and_tencent_sources():
         "meituan-experienced": "meituan",
         "pdd-campus": "pdd",
         "pdd-internship": "pdd",
+        "kuaishou-experienced": "kuaishou",
+        "kuaishou-campus": "kuaishou",
+        "kuaishou-internship": "kuaishou",
+        "jd-experienced": "jd",
+        "jd-campus": "jd",
+        "jd-internship": "jd",
+        "ant-experienced": "ant",
+        "ant-campus": "ant",
+        "ant-internship": "ant",
+        "amap-experienced": "amap",
+        "amap-campus": "amap",
+        "amap-internship": "amap",
+        "eleme-experienced": "eleme",
+        "eleme-campus": "eleme",
+        "eleme-internship": "eleme",
+        "aidc-experienced": "aidc",
+        "aidc-campus": "aidc",
+        "aidc-internship": "aidc",
     }
     assert expected.keys() <= source_by_key.keys()
     for key, collector_key in expected.items():
@@ -863,6 +887,28 @@ class TestPddCollector:
     def test_collector_key_is_pdd(self):
         assert pdd_collector.collector_key == "pdd"
 
+
+class TestNewCollectorRegistrations:
+    def test_kuaishou_collector_key(self):
+        assert kuaishou_collector.collector_key == "kuaishou"
+
+    def test_jd_collector_key(self):
+        assert jd_collector.collector_key == "jd"
+
+    def test_ant_collector_key(self):
+        assert ant_collector.collector_key == "ant"
+
+    def test_amap_collector_key(self):
+        assert amap_collector.collector_key == "amap"
+
+    def test_eleme_collector_key(self):
+        assert eleme_collector.collector_key == "eleme"
+
+    def test_aidc_collector_key(self):
+        assert aidc_collector.collector_key == "aidc"
+
+
+class TestPddCollectorMapping:
     def test_to_record_maps_fields(self):
         collector = PddCollector()
         source = make_source(

@@ -18,6 +18,8 @@ class AlibabaCareerVariantConfig:
     channel: str
     category_type: str | None
     detail_path_template: str
+    search_keyword_field: str = "keyword"
+    search_extra_payload: dict[str, Any] | None = None
 
     def detail_url(self, job_id: str) -> str:
         return self.detail_path_template.format(job_id=job_id)
@@ -231,7 +233,9 @@ class AlibabaCareerClient:
         if config.category_type:
             payload["categoryType"] = config.category_type
         if keyword:
-            payload["keyword"] = keyword
+            payload[config.search_keyword_field] = keyword
+        if config.search_extra_payload:
+            payload.update(config.search_extra_payload)
         return payload
 
     def _sort_key(self, item: dict[str, Any]) -> int:
