@@ -217,8 +217,11 @@ def test_runtime_config_exposes_llm_status_without_secrets(client):
     assert "OPENRESUME_OPENAI_API_KEY" in payload["llm_missing_envs"]
     assert "字节跳动" in payload["official_sources_summary"]
     assert "腾讯" in payload["official_sources_summary"]
-    assert "\u6dd8\u5b9d" in payload["official_sources_summary"]
+    assert "\u6dd8\u5929\u96c6\u56e2" in payload["official_sources_summary"]
     assert "\u963f\u91cc\u4e91" in payload["official_sources_summary"]
+    assert "\u963f\u91cc\u63a7\u80a1" in payload["official_sources_summary"]
+    assert "\u7f8e\u56e2" in payload["official_sources_summary"]
+    assert "\u62fc\u591a\u591a" in payload["official_sources_summary"]
     assert payload["openai_api_key_configured"] is False
     assert payload["openai_api_key_preview"] is None
 

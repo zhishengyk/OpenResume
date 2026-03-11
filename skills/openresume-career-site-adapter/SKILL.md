@@ -20,7 +20,13 @@ Use this skill to turn a company career homepage into real job detail extraction
 - ByteDance ATSX: prioritize the canonical `/campus/position` list page over noisy share or keyword pages, then use the signed campus APIs for real list and detail payloads.
 - Taobao or Taotian: treat `zhaopin.taobao.com` as an entry only. Move to `talent.taotian.com/campus/position-list`, obtain the page token, then call the real search endpoints.
 - Aliyun careers: treat `careers.aliyun.com` as a Taotian-like shell with circle-specific channels. Extract `__token__` from HTML, then call `/searchCondition/list` and `/position/search` on the same domain using `_csrf` query + `x-csrf-token`.
+- Alibaba holding: `talent-holding.alibaba.com` is the same Alibaba careers shell as Taotian/Aliyun. Reuse a shared Alibaba provider and swap only `base_url`, `channel`, and detail/list entry URLs.
+- Meituan official campus: the homepage is a shell. The real APIs are `POST /api/official/job/getJobList` and `POST /api/official/job/getJobDetail` on `zhaopin.meituan.com`. The list payload uses `page.pageNo`, `page.pageSize`, and `keywords`.
 - PDD shell pages: follow `/campus/grad` and `/campus/intern` before concluding the page is empty. The real jobs live behind JSON APIs, not the first HTML response.
+- PDD campus detail: the visible relative paths in chunks are misleading. The real list/detail endpoints are under `/api/careers/api/...`, for example:
+  - campus: `POST /api/careers/api/recruit/position/list`
+  - internship: `POST /api/careers/api/recruit/position/train/list`
+  - detail: `POST /api/careers/api/recruit/position/detail`
 - Tencent dual-site model:
   - `careers.tencent.com` uses `GET /tencentcareer/api/post/Query` with variant attrs (`experienced=1`, `campus=2,5`, `internship=3`), `pageSize<=50`, and possible `gb18030` payloads.
   - Chinese keywords can under-recall on `careers.tencent.com`; expand role keywords with stable English aliases (for example `frontend engineer`) before judging zero results.
@@ -61,6 +67,13 @@ When adding a new company source, define all three variants in `manifest.py` if 
 - Keep `raw_payload.quality` truthful so matching logic keeps working.
 - Always define all three recruitment type variants (experienced/campus/internship) for each company source.
 - If a company already has a collector, prefer adding a new provider into that collector for incremental sources instead of creating a new company collector.
+
+## Notes From 2026-03-11
+
+- When multiple Alibaba-group sites share the same shell, extract a reusable provider first. The stable seam is `base_url + variant channel config`; the token/csrf flow stays identical.
+- For PDD, do not trust the first relative `api/recruit/...` strings you see in the page chunks. Confirm the runtime network path; the actual browser requests prepend `/api/careers/`.
+- For Meituan, the campus homepage does not itself prove campus-only filtering. Confirm the list/detail APIs first, then decide whether variant labeling is a site-level truth or just an entry-page label.
+- Live smoke may need a repo-local fallback. If the standalone smoke script drifts behind the repo and imports removed modules, call `OfficialAdapter.search_jobs()` directly with `source_companies` and `source_variants` to validate real drafts.
 
 ## Reference
 

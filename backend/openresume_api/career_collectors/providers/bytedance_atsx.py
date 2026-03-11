@@ -129,6 +129,8 @@ class BytedanceAtsxClient:
                     keyword=keyword,
                 )
                 for item in items:
+                    if not self._matches_variant(variant=config.variant, item=item):
+                        continue
                     job_id = str(item.get("id") or "")
                     if not job_id:
                         continue
@@ -188,6 +190,55 @@ class BytedanceAtsxClient:
 
     def detail_url(self, *, variant: str, job_id: str) -> str:
         return VARIANT_CONFIGS[variant].detail_url(job_id)
+
+    def _matches_variant(self, *, variant: str, item: dict[str, Any]) -> bool:
+        recruit_type = item.get("recruit_type") or {}
+        if not isinstance(recruit_type, dict):
+            return variant != "internship"
+
+        parent = recruit_type.get("parent") or {}
+        if not isinstance(parent, dict):
+            parent = {}
+
+        parent_id = str(parent.get("id") or "").strip()
+        child_id = str(recruit_type.get("id") or "").strip()
+        parent_text = self._marker_text(
+            parent.get("name"),
+            parent.get("en_name"),
+            parent.get("i18n_name"),
+        )
+        child_text = self._marker_text(
+            recruit_type.get("name"),
+            recruit_type.get("en_name"),
+            recruit_type.get("i18n_name"),
+        )
+        title_text = self._marker_text(item.get("title"))
+
+        if variant == "experienced":
+            if parent_id or parent_text:
+                return parent_id == "1" or "experienced" in parent_text or "社招" in parent_text
+            return "intern" not in title_text and "实习" not in title_text
+
+        if variant == "campus":
+            if parent_id and parent_id != "2":
+                return False
+            if "experienced" in parent_text or "社招" in parent_text:
+                return False
+            if child_id == "202" or "intern" in child_text or "实习" in child_text:
+                return False
+            return parent_id == "2" or "campus" in parent_text or "校招" in parent_text
+
+        if variant == "internship":
+            if child_id:
+                return child_id == "202"
+            if "intern" in child_text or "实习" in child_text:
+                return True
+            return "intern" in title_text or "实习" in title_text
+
+        return True
+
+    def _marker_text(self, *values: Any) -> str:
+        return " ".join(str(value or "") for value in values).casefold()
 
     def _collect_keyword_jobs(
         self,
