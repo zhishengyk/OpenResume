@@ -35,6 +35,7 @@ The script now reuses the backend source classifier so site-specific extractors 
 - Prefer the smoke script over ad hoc snippets so output stays comparable across runs.
 - Use real network targets for acceptance and local fixtures for regression coverage.
 - Do not require an LLM key for this smoke path. It exercises the official extraction pipeline directly.
+- If the smoke script has drifted behind the repo and imports removed modules, fall back to a repo-local async smoke that calls `OfficialAdapter.search_jobs()` directly with explicit `source_companies` / `source_variants`, then record the returned draft count and top apply URLs.
 
 ## Reference
 

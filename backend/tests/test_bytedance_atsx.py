@@ -116,6 +116,39 @@ class TestBytedanceAtsxClient:
         url = client.detail_url(variant="campus", job_id="67890")
         assert url == "https://jobs.bytedance.com/campus/position/67890/detail"
 
+    def test_matches_variant_separates_campus_and_internship(self, client):
+        campus_regular = {
+            "title": "Frontend Engineer",
+            "recruit_type": {
+                "id": "201",
+                "name": "正式",
+                "parent": {"id": "2", "name": "校招", "en_name": "Campus"},
+            },
+        }
+        campus_intern = {
+            "title": "Frontend Intern",
+            "recruit_type": {
+                "id": "202",
+                "name": "实习",
+                "parent": {"id": "2", "name": "校招", "en_name": "Campus"},
+            },
+        }
+        experienced = {
+            "title": "Frontend Engineer",
+            "recruit_type": {
+                "id": "101",
+                "name": "正式",
+                "parent": {"id": "1", "name": "社招", "en_name": "Experienced"},
+            },
+        }
+
+        assert client._matches_variant(variant="campus", item=campus_regular) is True
+        assert client._matches_variant(variant="campus", item=campus_intern) is False
+        assert client._matches_variant(variant="internship", item=campus_intern) is True
+        assert client._matches_variant(variant="internship", item=campus_regular) is False
+        assert client._matches_variant(variant="experienced", item=experienced) is True
+        assert client._matches_variant(variant="experienced", item=campus_regular) is False
+
     def test_search_payload_structure(self, client):
         payload = client._search_payload(
             "前端工程师",

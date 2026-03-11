@@ -55,6 +55,24 @@ class Settings:
     official_aliyun_page_size: int = int(
         os.getenv("OPENRESUME_OFFICIAL_ALIYUN_PAGE_SIZE", "50")
     )
+    official_alibaba_holding_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_ALIBABA_HOLDING_PAGE_LIMIT", "8")
+    )
+    official_alibaba_holding_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_ALIBABA_HOLDING_PAGE_SIZE", "50")
+    )
+    official_meituan_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_MEITUAN_PAGE_LIMIT", "8")
+    )
+    official_meituan_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_MEITUAN_PAGE_SIZE", "50")
+    )
+    official_pdd_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_PDD_PAGE_LIMIT", "8")
+    )
+    official_pdd_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_PDD_PAGE_SIZE", "50")
+    )
     disable_browser_open: bool = (
         os.getenv("OPENRESUME_DISABLE_BROWSER_OPEN", "0") == "1"
     )

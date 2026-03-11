@@ -9,10 +9,22 @@ from openresume_api.career_collectors.base import (
     CollectorRunResult,
     CompanyCollector,
 )
+from openresume_api.career_collectors.companies.alibaba_holding import (
+    AlibabaHoldingCollector,
+    alibaba_holding_collector,
+)
 from openresume_api.career_collectors.companies.bytedance import (
     BytedanceCollector,
     _first_nested_name,
     bytedance_collector,
+)
+from openresume_api.career_collectors.companies.meituan import (
+    MeituanCollector,
+    meituan_collector,
+)
+from openresume_api.career_collectors.companies.pdd import (
+    PddCollector,
+    pdd_collector,
 )
 from openresume_api.career_collectors.companies.tencent import (
     TencentCollector,
@@ -101,6 +113,12 @@ def test_manifest_registers_bytedance_and_tencent_sources():
         "aliyun-experienced": "aliyun",
         "aliyun-campus": "aliyun",
         "aliyun-internship": "aliyun",
+        "alibaba-holding-experienced": "alibaba_holding",
+        "alibaba-holding-campus": "alibaba_holding",
+        "alibaba-holding-internship": "alibaba_holding",
+        "meituan-experienced": "meituan",
+        "pdd-campus": "pdd",
+        "pdd-internship": "pdd",
     }
     assert expected.keys() <= source_by_key.keys()
     for key, collector_key in expected.items():
@@ -400,10 +418,16 @@ class TestFilterSources:
     def test_filters_by_variant(self):
         sources = load_sources()
         filtered = filter_sources(sources, variants=["experienced"])
-        assert len(filtered) >= 4
+        assert len(filtered) >= 5
         assert all(source.variant == "experienced" for source in filtered)
         collector_keys = {source.collector_key for source in filtered}
-        assert {"bytedance", "tencent", "taobao", "aliyun"} <= collector_keys
+        assert {
+            "bytedance",
+            "tencent",
+            "taobao",
+            "aliyun",
+            "alibaba_holding",
+        } <= collector_keys
 
     def test_filters_by_company(self):
         sources = load_sources()
@@ -432,7 +456,7 @@ class TestFilterSources:
 
     def test_filters_by_taobao_company(self):
         sources = load_sources()
-        filtered = filter_sources(sources, companies=["淘宝"])
+        filtered = filter_sources(sources, companies=["淘天集团"])
         assert len(filtered) == 3
         assert all(source.collector_key == "taobao" for source in filtered)
 
@@ -441,6 +465,24 @@ class TestFilterSources:
         filtered = filter_sources(sources, companies=["阿里云"])
         assert len(filtered) == 3
         assert all(source.collector_key == "aliyun" for source in filtered)
+
+    def test_filters_by_alibaba_holding_company(self):
+        sources = load_sources()
+        filtered = filter_sources(sources, companies=["阿里控股"])
+        assert len(filtered) == 3
+        assert all(source.collector_key == "alibaba_holding" for source in filtered)
+
+    def test_filters_by_meituan_company(self):
+        sources = load_sources()
+        filtered = filter_sources(sources, companies=["美团"])
+        assert len(filtered) == 1
+        assert filtered[0].collector_key == "meituan"
+
+    def test_filters_by_pdd_company(self):
+        sources = load_sources()
+        filtered = filter_sources(sources, companies=["拼多多"])
+        assert len(filtered) == 2
+        assert all(source.collector_key == "pdd" for source in filtered)
 
     def test_returns_all_when_no_filters(self):
         sources = load_sources()
@@ -605,8 +647,8 @@ class TestTaobaoCollector:
             key="test",
             collector_key="taobao",
             variant="experienced",
-            company_name="Taobao",
-            entry_url="https://zhaopin.taobao.com/",
+            company_name="淘天集团",
+            entry_url="https://talent.taotian.com/",
             source_site="talent.taotian.com",
         )
         provider = MagicMock()
@@ -627,7 +669,7 @@ class TestTaobaoCollector:
             key="test",
             collector_key="taobao",
             variant="internship",
-            company_name="Taobao",
+            company_name="淘天集团",
             entry_url=(
                 "https://talent.taotian.com/campus/position-list"
                 "?campusType=internship&lang=zh"
@@ -663,7 +705,7 @@ class TestTaobaoCollector:
         assert result.description_text == "Build products"
         assert result.requirements_text == "React TypeScript"
         assert result.employment_type == "实习"
-        assert result.source_company == "淘宝"
+        assert result.source_company == "淘天集团"
         assert result.source_site == "talent.taotian.com"
         assert result.posted_at is not None
 
@@ -677,7 +719,7 @@ class TestAliyunCollector:
             key="test",
             collector_key="aliyun",
             variant="experienced",
-            company_name="Aliyun",
+            company_name="阿里云",
             entry_url="https://careers.aliyun.com/off-campus/position-list?lang=zh",
             source_site="careers.aliyun.com",
         )
@@ -699,7 +741,7 @@ class TestAliyunCollector:
             key="test",
             collector_key="aliyun",
             variant="campus",
-            company_name="Aliyun",
+            company_name="阿里云",
             entry_url=(
                 "https://careers.aliyun.com/campus/position-list"
                 "?campusType=freshman&lang=zh"
@@ -738,3 +780,119 @@ class TestAliyunCollector:
         assert result.source_company == "阿里云"
         assert result.source_site == "careers.aliyun.com"
         assert result.posted_at is not None
+
+
+class TestAlibabaHoldingCollector:
+    def test_collector_key_is_alibaba_holding(self):
+        assert alibaba_holding_collector.collector_key == "alibaba_holding"
+
+    def test_to_record_maps_fields(self):
+        collector = AlibabaHoldingCollector()
+        source = make_source(
+            key="test",
+            collector_key="alibaba_holding",
+            variant="experienced",
+            company_name="阿里控股",
+            entry_url="https://talent-holding.alibaba.com/",
+            source_site="talent-holding.alibaba.com",
+        )
+        provider = MagicMock()
+        provider.detail_url.return_value = (
+            "https://talent-holding.alibaba.com/off-campus/position-detail?positionId=123"
+        )
+        result = collector._to_record(
+            source,
+            {
+                "id": "123",
+                "name": "Frontend Engineer",
+                "description": "Build platforms",
+                "requirement": "React TypeScript",
+                "workLocations": ["Hangzhou"],
+                "categoryName": "Engineering",
+                "publishTime": 1704067200000,
+            },
+            provider=provider,
+            crawl_time=datetime(2026, 3, 10),
+        )
+        assert result is not None
+        assert result.source_company == "阿里控股"
+        assert result.source_site == "talent-holding.alibaba.com"
+        assert result.employment_type == "社招"
+
+
+class TestMeituanCollector:
+    def test_collector_key_is_meituan(self):
+        assert meituan_collector.collector_key == "meituan"
+
+    def test_to_record_maps_fields(self):
+        collector = MeituanCollector()
+        source = make_source(
+            key="test",
+            collector_key="meituan",
+            variant="experienced",
+            company_name="美团",
+            entry_url="https://zhaopin.meituan.com/web/social",
+            source_site="zhaopin.meituan.com",
+        )
+        provider = MagicMock()
+        provider.detail_url.return_value = (
+            "https://zhaopin.meituan.com/web/position/detail?jobUnionId=123"
+        )
+        result = collector._to_record(
+            source,
+            {
+                "jobUnionId": "123",
+                "name": "Frontend Engineer",
+                "cityList": [{"name": "北京"}],
+                "department": [{"name": "平台研发"}],
+                "jobDuty": "Build products",
+                "jobRequirement": "React TypeScript",
+                "firstPostTime": 1704067200000,
+            },
+            provider=provider,
+            crawl_time=datetime(2026, 3, 10),
+        )
+        assert result is not None
+        assert result.source_company == "美团"
+        assert result.source_site == "zhaopin.meituan.com"
+        assert result.employment_type == "社招"
+        assert result.location_city == "北京"
+
+
+class TestPddCollector:
+    def test_collector_key_is_pdd(self):
+        assert pdd_collector.collector_key == "pdd"
+
+    def test_to_record_maps_fields(self):
+        collector = PddCollector()
+        source = make_source(
+            key="test",
+            collector_key="pdd",
+            variant="internship",
+            company_name="拼多多",
+            entry_url="https://careers.pddglobalhr.com/campus/intern",
+            source_site="careers.pddglobalhr.com",
+        )
+        provider = MagicMock()
+        provider.detail_url.return_value = (
+            "https://careers.pddglobalhr.com/campus/intern/detail?positionId=123"
+        )
+        result = collector._to_record(
+            source,
+            {
+                "id": "123",
+                "name": "Web Frontend Intern",
+                "workLocationName": "上海",
+                "jobName": "技术",
+                "jobDuty": "Build products",
+                "serveRequirement": "React TypeScript",
+                "releaseTime": 1704067200000,
+            },
+            provider=provider,
+            crawl_time=datetime(2026, 3, 10),
+        )
+        assert result is not None
+        assert result.source_company == "拼多多"
+        assert result.source_site == "careers.pddglobalhr.com"
+        assert result.employment_type == "实习"
+        assert result.location_city == "上海"

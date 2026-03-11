@@ -9,39 +9,39 @@ from .alibaba_careers import (
 )
 
 
-BASE_URL = "https://careers.aliyun.com"
+BASE_URL = "https://talent-holding.alibaba.com"
 
 VARIANT_CONFIGS: dict[str, AlibabaCareerVariantConfig] = {
     "experienced": AlibabaCareerVariantConfig(
         variant="experienced",
-        entry_url="https://careers.aliyun.com/off-campus/position-list?lang=zh",
-        channel="aliyun_group_official_site",
+        entry_url="https://talent-holding.alibaba.com/off-campus/position-list?lang=zh",
+        channel="kgjt_group_official_site",
         category_type=None,
         detail_path_template=(
-            "https://careers.aliyun.com/off-campus/position-detail?positionId={job_id}"
+            "https://talent-holding.alibaba.com/off-campus/position-detail?positionId={job_id}"
         ),
     ),
     "campus": AlibabaCareerVariantConfig(
         variant="campus",
         entry_url=(
-            "https://careers.aliyun.com/campus/position-list?campusType=freshman&lang=zh"
+            "https://talent-holding.alibaba.com/campus/position-list?campusType=freshman&lang=zh"
         ),
-        channel="aliyun_campus_group_official_site",
+        channel="kgjt_campus_group_official_site",
         category_type="freshman",
         detail_path_template=(
-            "https://careers.aliyun.com/campus/position-detail"
+            "https://talent-holding.alibaba.com/campus/position-detail"
             "?positionId={job_id}&campusType=freshman"
         ),
     ),
     "internship": AlibabaCareerVariantConfig(
         variant="internship",
         entry_url=(
-            "https://careers.aliyun.com/campus/position-list?campusType=internship&lang=zh"
+            "https://talent-holding.alibaba.com/campus/position-list?campusType=internship&lang=zh"
         ),
-        channel="aliyun_campus_group_official_site",
+        channel="kgjt_campus_group_official_site",
         category_type="internship",
         detail_path_template=(
-            "https://careers.aliyun.com/campus/position-detail"
+            "https://talent-holding.alibaba.com/campus/position-detail"
             "?positionId={job_id}&campusType=internship"
         ),
     ),
@@ -53,7 +53,7 @@ SITE_CONFIG = AlibabaCareerSiteConfig(
 )
 
 
-class AliyunCareersClient(AlibabaCareerClient):
+class AlibabaHoldingCareerClient(AlibabaCareerClient):
     def __init__(
         self,
         *,
