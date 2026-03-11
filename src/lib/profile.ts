@@ -2,13 +2,15 @@ import type { Award, CandidateProfile, ProjectExperience } from "../types";
 import { splitCommaValues } from "./utils";
 
 export const SEARCH_DRAFT_STORAGE_KEY = "openresume.search.profileDraft";
-export const SEARCH_DRAFT_VERSION = 1;
+export const SEARCH_DRAFT_VERSION = 2;
 
 export interface SearchProfileDraftFields {
   jobTargets: string;
   cities: string;
   salaryFloor: string;
   mustHaveKeywords: string;
+  matchLimit: string;
+  companyJobLimit: string;
   techStack: string;
   projectExperiences: string;
   awards: string;
@@ -29,6 +31,8 @@ export function profileToSearchDraftFields(
     cities: profile.preferred_cities.join(", "),
     salaryFloor: String(profile.salary_floor || 0),
     mustHaveKeywords: profile.must_have_keywords.join(", "),
+    matchLimit: "200",
+    companyJobLimit: "200",
     techStack: profile.tech_stack.join(", "),
     projectExperiences: serializeProjectExperiences(profile.project_experiences),
     awards: serializeAwards(profile.awards),

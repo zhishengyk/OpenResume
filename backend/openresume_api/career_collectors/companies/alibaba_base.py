@@ -58,8 +58,11 @@ class BaseAlibabaCareerCollector(CompanyCollector):
             max_pages=max(1, int(getattr(settings, self.page_limit_setting))),
             page_size=max(1, int(getattr(settings, self.page_size_setting))),
         )
-        raw_jobs = provider.collect_jobs(variant=source.variant, keywords=keywords)
-        selected_jobs = raw_jobs[: settings.official_job_limit_per_source]
+        selected_jobs = provider.collect_jobs(
+            variant=source.variant,
+            keywords=keywords,
+            limit=self.source_job_limit(search),
+        )
 
         records: list[CollectedJobRecord] = []
         for item in selected_jobs:

@@ -101,6 +101,8 @@ def create_search_session(
     cities: list[str] | None = None,
     salary_floor: int = 25000,
     must_have_keywords: list[str] | None = None,
+    match_limit: int = 200,
+    company_job_limit: int = 200,
     force_refresh: bool = False,
 ):
     return client.post(
@@ -122,6 +124,8 @@ def create_search_session(
             ),
             "source_variants": [] if source_variants is None else source_variants,
             "source_companies": [] if source_companies is None else source_companies,
+            "match_limit": match_limit,
+            "company_job_limit": company_job_limit,
             "force_refresh": force_refresh,
         },
     )
@@ -837,6 +841,40 @@ def test_search_session_persists_source_filters_and_retry_reuses_them(client, mo
     assert observed[1] == (["campus", "internship"], ["字节跳动"])
 
 
+def test_search_session_persists_limits_and_retry_reuses_them(client, monkeypatch):
+    upsert_profile(client)
+    observed: list[tuple[int, int]] = []
+
+    async def fake_search_jobs(search, profile):
+        observed.append((search.match_limit, search.company_job_limit))
+        return [sample_draft()]
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+
+    session = create_search_session(
+        client,
+        match_limit=150,
+        company_job_limit=40,
+        force_refresh=True,
+    )
+    assert session.status_code == 200
+    session_id = session.json()["id"]
+    wait_for_session_status(client, session_id, "ready")
+
+    latest = client.get(f"/api/search-sessions/{session_id}")
+    assert latest.status_code == 200
+    payload = latest.json()
+    assert payload["match_limit"] == 150
+    assert payload["company_job_limit"] == 40
+
+    retry = client.post(f"/api/search-sessions/{session_id}/retry")
+    assert retry.status_code == 200
+    wait_for_session_status(client, session_id, "ready")
+
+    assert observed[0] == (150, 40)
+    assert observed[1] == (150, 40)
+
+
 def test_search_fetch_cache_hit_reuses_previous_payload(client, monkeypatch):
     upsert_profile(client)
     call_count = {"value": 0}
@@ -1085,6 +1123,65 @@ def test_search_pipeline_only_applies_llm_to_first_120_matches(client, monkeypat
     assert observed["jobs"] == 120
     assert sum(1 for item in payload if item["llm_score"] is not None) == 120
     assert sum(1 for item in payload if item["llm_score"] is None) == 10
+
+
+def test_search_pipeline_caps_visible_matches_to_200(client, monkeypatch):
+    upsert_profile(client)
+
+    async def fake_search_jobs(search, profile):
+        return sample_drafts(230)
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+
+    session = create_search_session(
+        client,
+        salary_floor=0,
+        must_have_keywords=[],
+        cities=[],
+    )
+    assert session.status_code == 200
+
+    wait_for_session_status(client, session.json()["id"], "ready")
+    matches = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    assert matches.status_code == 200
+    payload = matches.json()
+
+    assert len(payload) == 200
+    assert payload[0]["job_id"] == "official-live-000"
+    assert payload[-1]["job_id"] == "official-live-199"
+
+
+def test_search_pipeline_caps_matches_per_company(client, monkeypatch):
+    upsert_profile(client)
+
+    async def fake_search_jobs(search, profile):
+        drafts = sample_drafts(90)
+        for index, draft in enumerate(drafts):
+            draft.source_company = "ByteDance" if index < 60 else "JD"
+        return drafts
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+
+    session = create_search_session(
+        client,
+        salary_floor=0,
+        must_have_keywords=[],
+        cities=[],
+        match_limit=50,
+        company_job_limit=10,
+    )
+    assert session.status_code == 200
+
+    wait_for_session_status(client, session.json()["id"], "ready")
+    matches = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    assert matches.status_code == 200
+    payload = matches.json()
+
+    assert len(payload) == 20
+    counts: dict[str, int] = {}
+    for item in payload:
+        counts[item["source_company"]] = counts.get(item["source_company"], 0) + 1
+    assert counts == {"ByteDance": 10, "JD": 10}
 
 
 def test_background_llm_failure_does_not_roll_back_ready_session(client, monkeypatch):

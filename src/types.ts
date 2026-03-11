@@ -96,6 +96,8 @@ export interface SearchSession {
   must_have_keywords: string[];
   source_variants: string[];
   source_companies: string[];
+  match_limit: number;
+  company_job_limit: number;
   force_refresh: boolean;
   created_at: string;
   updated_at: string;

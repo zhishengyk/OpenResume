@@ -53,6 +53,8 @@ const emptyDraftFields: SearchProfileDraftFields = {
   cities: "",
   salaryFloor: "0",
   mustHaveKeywords: "",
+  matchLimit: "200",
+  companyJobLimit: "200",
   techStack: "",
   projectExperiences: "",
   awards: "",
@@ -76,6 +78,14 @@ function initialCollapsedState() {
     return stored === "1";
   }
   return window.matchMedia("(max-width: 1279px)").matches;
+}
+
+function clampSearchLimit(value: string, fallback: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.min(1000, Math.max(1, Math.round(parsed)));
 }
 
 export function SearchPage() {
@@ -301,6 +311,8 @@ export function SearchPage() {
         must_have_keywords: splitCommaValues(draftFields.mustHaveKeywords),
         source_variants: selectedVariants.length > 0 ? selectedVariants : undefined,
         source_companies: selectedCompanies.length > 0 ? selectedCompanies : undefined,
+        match_limit: clampSearchLimit(draftFields.matchLimit, 200),
+        company_job_limit: clampSearchLimit(draftFields.companyJobLimit, 200),
         force_refresh: forceRefresh,
       });
     },
@@ -425,6 +437,34 @@ export function SearchPage() {
                   className="w-full rounded-2xl border border-ink/10 bg-paper px-4 py-3 text-sm text-ink outline-none transition focus:border-ink/30"
                 />
               </label>
+              <label className="space-y-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-slate">
+                  结果上限
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={draftFields.matchLimit}
+                  onChange={(event) => updateDraftField("matchLimit", event.target.value)}
+                  className="w-full rounded-2xl border border-ink/10 bg-paper px-4 py-3 text-sm text-ink outline-none transition focus:border-ink/30"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-slate">
+                  单公司上限
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={draftFields.companyJobLimit}
+                  onChange={(event) =>
+                    updateDraftField("companyJobLimit", event.target.value)
+                  }
+                  className="w-full rounded-2xl border border-ink/10 bg-paper px-4 py-3 text-sm text-ink outline-none transition focus:border-ink/30"
+                />
+              </label>
               <label className="space-y-2 lg:col-span-3">
                 <span className="text-xs uppercase tracking-[0.2em] text-slate">
                   必备关键词
@@ -438,6 +478,9 @@ export function SearchPage() {
                   className="w-full rounded-[24px] border border-ink/10 bg-paper px-4 py-3 text-sm leading-7 text-ink outline-none transition focus:border-ink/30"
                 />
               </label>
+              <p className="text-xs text-slate lg:col-span-3">
+                结果上限控制本次搜索最多保留多少岗位，最大 1000。单公司上限控制每家公司最多保留多少岗位，避免单一公司占满结果。
+              </p>
             </div>
 
             <div className="mt-6 flex flex-wrap items-center gap-3">

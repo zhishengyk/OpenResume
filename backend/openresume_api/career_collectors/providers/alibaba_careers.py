@@ -54,9 +54,11 @@ class AlibabaCareerClient:
         *,
         variant: str,
         keywords: list[str],
+        limit: int | None = None,
     ) -> list[dict[str, Any]]:
         config = self.site_config.variants[variant]
         deduped: dict[str, dict[str, Any]] = {}
+        max_items = max(1, limit) if limit else None
         query_keywords = [item.strip() for item in keywords if item.strip()]
         query_keywords = list(dict.fromkeys(query_keywords))
         if not query_keywords:
@@ -76,6 +78,10 @@ class AlibabaCareerClient:
                     if not job_id:
                         continue
                     deduped.setdefault(job_id, item)
+                    if max_items and len(deduped) >= max_items:
+                        break
+                if max_items and len(deduped) >= max_items:
+                    break
             if not deduped and query_keywords != [""]:
                 for item in self._collect_keyword_jobs(
                     client,
@@ -87,8 +93,10 @@ class AlibabaCareerClient:
                     if not job_id:
                         continue
                     deduped.setdefault(job_id, item)
+                    if max_items and len(deduped) >= max_items:
+                        break
 
-        return sorted(deduped.values(), key=self._sort_key, reverse=True)
+        return sorted(deduped.values(), key=self._sort_key, reverse=True)[:max_items]
 
     def detail_url(self, *, variant: str, job_id: str, position_url: str = "") -> str:
         if position_url:

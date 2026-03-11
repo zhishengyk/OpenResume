@@ -75,11 +75,24 @@ def test_search_session_migration_rebuilds_legacy_platform_column():
                 analysis_degraded,
                 source_variants,
                 source_companies,
+                match_limit,
+                company_job_limit,
                 force_refresh
             FROM searchsession
             """
         ).fetchone()
-        assert row == ("session-1", '["official"]', "ready", "heuristic", 0, "[]", "[]", 0)
+        assert row == (
+            "session-1",
+            '["official"]',
+            "ready",
+            "heuristic",
+            0,
+            "[]",
+            "[]",
+            200,
+            200,
+            0,
+        )
     finally:
         connection.close()
 

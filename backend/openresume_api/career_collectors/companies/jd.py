@@ -49,32 +49,53 @@ class JdCollector(CompanyCollector):
             user_agent=DEFAULT_USER_AGENT,
             max_pages=max(1, settings.official_jd_page_limit),
             page_size=max(1, settings.official_jd_page_size),
+            page_worker_count=max(1, settings.official_page_worker_count),
         )
         campus_provider = JdCampusClient(
             timeout_seconds=settings.official_request_timeout_seconds,
             user_agent=DEFAULT_USER_AGENT,
             max_pages=max(1, settings.official_jd_page_limit),
             page_size=max(1, settings.official_jd_page_size),
+            page_worker_count=max(1, settings.official_page_worker_count),
         )
 
         if source.variant == "experienced":
-            raw_jobs = social_provider.collect_jobs(keywords=keywords)
+            selected_jobs = social_provider.collect_jobs(
+                keywords=keywords,
+                limit=self.source_job_limit(search),
+            )
         else:
-            raw_jobs = campus_provider.collect_jobs(variant=source.variant, keywords=keywords)
-
-        selected_jobs = raw_jobs[: settings.official_job_limit_per_source]
+            selected_jobs = campus_provider.collect_jobs(
+                variant=source.variant,
+                keywords=keywords,
+                limit=self.source_job_limit(search),
+            )
         records: list[CollectedJobRecord] = []
+
+        detail_by_publish_id: dict[str, dict[str, Any]] = {}
+        if source.variant in {"campus", "internship"}:
+            jobs_with_publish_id = [
+                item
+                for item in selected_jobs
+                if normalize_whitespace(str(item.get("publishId") or ""))
+            ]
+            worker_count = min(settings.official_detail_worker_count, len(jobs_with_publish_id))
+            publish_ids = [
+                normalize_whitespace(str(item.get("publishId") or ""))
+                for item in jobs_with_publish_id
+            ]
+            detail_by_publish_id = campus_provider.get_job_details(
+                variant=source.variant,
+                publish_ids=publish_ids,
+                worker_count=worker_count,
+            )
 
         for item in selected_jobs:
             payload = dict(item)
             if source.variant in {"campus", "internship"}:
                 publish_id = normalize_whitespace(str(payload.get("publishId") or ""))
                 if publish_id:
-                    detail = campus_provider.get_job_detail(
-                        variant=source.variant,
-                        publish_id=publish_id,
-                    )
-                    payload.update(detail)
+                    payload.update(detail_by_publish_id.get(publish_id) or {})
 
             record = self._to_record(
                 source,
