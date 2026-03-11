@@ -3,7 +3,7 @@ import { AlertOctagon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { StatusPill } from "../components/StatusPill";
 import { api } from "../lib/api";
-import { modeLabel, pillLabel } from "../lib/utils";
+import { formatDateTime, modeLabel, pillLabel } from "../lib/utils";
 
 async function openVerificationPopup(url: string, title: string) {
   if (window.openResumeDesktop?.openVerificationWindow) {
@@ -101,7 +101,7 @@ export function HistoryPage() {
                         .map((platform) => pillLabel(platform))
                         .join(" | ")}{" "}
                       | {modeLabel(session.mode)} |{" "}
-                      {new Date(session.created_at).toLocaleString()}
+                      {formatDateTime(session.created_at)}
                     </p>
                     {session.analysis_notice ? (
                       <p className="mt-2 text-sm leading-6 text-slate">
@@ -142,7 +142,7 @@ export function HistoryPage() {
                 </p>
                 <p className="mt-1 text-sm text-slate">
                   {pillLabel(attempt.platform)} | {modeLabel(attempt.mode)} |{" "}
-                  {new Date(attempt.created_at).toLocaleString()}
+                  {formatDateTime(attempt.created_at)}
                 </p>
                 <p className="mt-2 text-sm leading-7 text-slate">{attempt.message}</p>
               </div>

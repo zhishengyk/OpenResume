@@ -1,4 +1,5 @@
 import type { SearchEvent } from "../types";
+import { formatTime } from "../lib/utils";
 
 function eventTypeLabel(type: string) {
   const mapping: Record<string, string> = {
@@ -47,7 +48,7 @@ export function Timeline({ events }: TimelineProps) {
             <div>
               <p className="text-sm font-semibold text-ink">{event.message}</p>
               <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate">
-                {eventTypeLabel(event.type)} | {new Date(event.timestamp).toLocaleTimeString()}
+                {eventTypeLabel(event.type)} | {formatTime(event.timestamp)}
               </p>
             </div>
           </div>
