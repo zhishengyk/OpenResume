@@ -67,3 +67,38 @@ export function statusTone(status: string) {
       return "bg-ink/10 text-ink";
   }
 }
+
+/**
+ * 格式化 UTC 时间字符串为本地时间显示
+ * 后端返回的时间是 UTC 时间但不带时区标识，需要手动添加 'Z' 后缀
+ */
+export function formatDateTime(utcTimeString: string): string {
+  if (!utcTimeString) return "";
+  // 如果时间字符串不包含时区信息，添加 'Z' 表示 UTC
+  const timeString = utcTimeString.endsWith("Z") ? utcTimeString : `${utcTimeString}Z`;
+  const date = new Date(timeString);
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
+/**
+ * 格式化 UTC 时间字符串为本地时间（仅时分秒）
+ */
+export function formatTime(utcTimeString: string): string {
+  if (!utcTimeString) return "";
+  const timeString = utcTimeString.endsWith("Z") ? utcTimeString : `${utcTimeString}Z`;
+  const date = new Date(timeString);
+  return date.toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
