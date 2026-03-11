@@ -73,6 +73,42 @@ class Settings:
     official_pdd_page_size: int = int(
         os.getenv("OPENRESUME_OFFICIAL_PDD_PAGE_SIZE", "50")
     )
+    official_kuaishou_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_KUAISHOU_PAGE_LIMIT", "8")
+    )
+    official_kuaishou_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_KUAISHOU_PAGE_SIZE", "50")
+    )
+    official_jd_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_JD_PAGE_LIMIT", "8")
+    )
+    official_jd_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_JD_PAGE_SIZE", "50")
+    )
+    official_ant_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_ANT_PAGE_LIMIT", "8")
+    )
+    official_ant_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_ANT_PAGE_SIZE", "50")
+    )
+    official_amap_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_AMAP_PAGE_LIMIT", "8")
+    )
+    official_amap_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_AMAP_PAGE_SIZE", "50")
+    )
+    official_eleme_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_ELEME_PAGE_LIMIT", "8")
+    )
+    official_eleme_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_ELEME_PAGE_SIZE", "50")
+    )
+    official_aidc_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_AIDC_PAGE_LIMIT", "8")
+    )
+    official_aidc_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_AIDC_PAGE_SIZE", "50")
+    )
     disable_browser_open: bool = (
         os.getenv("OPENRESUME_DISABLE_BROWSER_OPEN", "0") == "1"
     )
