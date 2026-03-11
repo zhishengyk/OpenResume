@@ -153,7 +153,7 @@ export function ResultsPage() {
 
   const analysisProviderLabel = useMemo(() => {
     if (analysisInProgress) {
-      return "处理中";
+      return "后台处理中";
     }
     if (analysisFailed) {
       return "失败";
@@ -165,10 +165,10 @@ export function ResultsPage() {
   }, [analysisFailed, analysisInProgress, analysisReady, sessionQuery.data]);
 
   const analysisHint = analysisInProgress
-    ? "规则排序结果已可查看，模型分析完成后会自动刷新并重排。"
+    ? "规则排序结果已经可看，模型分析完成后会自动刷新并重新排序。"
     : analysisFailed
-      ? "模型分析未完成，当前仍可查看规则排序结果。"
-      : "模型分析完成后，这里会显示实际生效的分析提供方。";
+      ? "模型分析未完成，当前仍展示规则排序结果。"
+      : "模型分析完成后，这里会显示当前实际生效的分析来源。";
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -196,8 +196,8 @@ export function ResultsPage() {
 
       {analysisInProgress ? (
         <section className="rounded-[32px] border border-signal/30 bg-signal/10 p-6 shadow-console">
-          <p className="text-sm leading-7 text-ink">
-            模型分析正在后台进行中。当前列表先按规则分展示，分析完成后会自动刷新并按最终分重排。
+            <p className="text-sm leading-7 text-ink">
+            模型分析正在后台进行。当前列表先按规则分展示，分析完成后会自动刷新，并按最终分重新排序。
           </p>
         </section>
       ) : null}
@@ -206,7 +206,7 @@ export function ResultsPage() {
         (analysisReady && sessionQuery.data?.analysis_degraded && sessionQuery.data.analysis_notice)) ? (
         <section className="rounded-[32px] border border-amber-500/30 bg-amber-500/10 p-6 shadow-console">
           <p className="text-sm leading-7 text-ink">
-            {sessionQuery.data?.analysis_notice || "模型分析未完成，当前展示规则排序结果。"}
+            {sessionQuery.data?.analysis_notice || "模型分析未完成，当前展示的是规则排序结果。"}
           </p>
         </section>
       ) : null}
@@ -219,9 +219,9 @@ export function ResultsPage() {
                 <AlertTriangle size={16} />
                 需要验证
               </p>
-              <h2 className="mt-3 font-display text-3xl text-ink">
-                先完成验证，再继续这次搜索。
-              </h2>
+            <h2 className="mt-3 font-display text-3xl text-ink">
+              先完成验证，再继续这次搜索。
+            </h2>
               <p className="mt-3 text-sm leading-7 text-slate">
                 {sessionQuery.data?.blocked_reason || "平台要求先完成人工验证。"}
               </p>
@@ -254,7 +254,7 @@ export function ResultsPage() {
         <MetricCard
           label="可见职位"
           value={String(matchesQuery.data?.length ?? 0)}
-          hint="这里只展示通过抓取和代码清洗后保留下来的职位。"
+          hint="这里只展示抓取并清洗后保留下来的职位。"
         />
         <MetricCard
           label="已选平台"
@@ -332,7 +332,7 @@ export function ResultsPage() {
               ) : null}
               {totalPages > 1 ? (
                 <p className="text-center text-sm text-slate">
-                  第 {currentPage} / {totalPages} 页，共 {matchesQuery.data?.length || 0} 条职位
+                  第 {currentPage} 页，共 {totalPages} 页，合计 {matchesQuery.data?.length || 0} 条职位
                 </p>
               ) : null}
             </>

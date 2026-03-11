@@ -310,7 +310,8 @@ export function MatchCard({ match }: MatchCardProps) {
               </div>
               <h3 className="mt-2 truncate font-display text-2xl text-ink">{match.title}</h3>
               <p className="mt-1 text-sm text-slate">
-                {match.source_company} 路 {locationDisplay} 路 {match.employment_type || "类型未知"}
+                {match.source_company} · {locationDisplay} ·{" "}
+                {match.employment_type || "类型未知"}
               </p>
               {!isExpanded ? (
                 <p className="mt-2 line-clamp-2 text-sm text-slate/70">
@@ -362,7 +363,7 @@ export function MatchCard({ match }: MatchCardProps) {
                   匹配摘要
                 </p>
                 <p className="mt-2 text-sm leading-6 text-ink">
-                  {match.llm_summary || "当前显示的是规则排序结果，模型补充完成后会在这里展示。"}
+                  {match.llm_summary || "当前展示的是规则排序结果，模型分析完成后会在这里补充摘要。"}
                 </p>
               </div>
 
@@ -453,7 +454,7 @@ export function MatchCard({ match }: MatchCardProps) {
             ) : null}
 
             <p className="text-xs text-slate/70">
-              平台：{pillLabel(match.platform)} 路 模式：
+              平台：{pillLabel(match.platform)} · 模式：
               {modeLabel(match.apply_supported ? "guided_apply" : "review_in_browser")}
             </p>
           </div>
