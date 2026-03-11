@@ -54,11 +54,28 @@ function sessionRefetchInterval(
 }
 
 export function ResultsPage() {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const queryClient = useQueryClient();
   const [events, setEvents] = useState<SearchEvent[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const sessionId = params.get("session") || undefined;
+  const sessionIdFromUrl = params.get("session") || undefined;
+
+  // 获取搜索历史列表，用于在没有 session 参数时加载最近一次搜索
+  const sessionsListQuery = useQuery({
+    queryKey: ["search-sessions"],
+    queryFn: api.listSearchSessions,
+    enabled: !sessionIdFromUrl,
+  });
+
+  // 如果 URL 没有 session 参数，自动使用最近一次的搜索结果
+  const sessionId = sessionIdFromUrl || sessionsListQuery.data?.[0]?.id;
+
+  // 当自动加载最近搜索时，更新 URL 参数
+  useEffect(() => {
+    if (!sessionIdFromUrl && sessionId) {
+      setParams({ session: sessionId }, { replace: true });
+    }
+  }, [sessionIdFromUrl, sessionId, setParams]);
 
   useEffect(() => {
     setEvents([]);
