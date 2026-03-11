@@ -46,6 +46,9 @@ def make_profile(
     salary_floor: int = 0,
     skills: list[str] | None = None,
     must_have_keywords: list[str] | None = None,
+    tech_stack: list[str] | None = None,
+    project_experiences: list[dict] | None = None,
+    awards: list[dict] | None = None,
     years_experience: int = 5,
 ) -> CandidateProfile:
     return CandidateProfile(
@@ -55,6 +58,9 @@ def make_profile(
         salary_floor=salary_floor,
         skills=skills or ["React", "TypeScript"],
         must_have_keywords=must_have_keywords or [],
+        tech_stack=tech_stack or [],
+        project_experiences=project_experiences or [],
+        awards=awards or [],
         years_experience=years_experience,
     )
 
@@ -213,3 +219,53 @@ def test_matching_service_adds_existing_risk_flags():
     assert "Onsite work required" in risk_flags
     assert "May include people management" in risk_flags
     assert "Experience requirement may be high" in risk_flags
+
+
+def test_matching_service_prefers_portrait_evidence_rich_roles():
+    profile = make_profile(
+        skills=["React", "TypeScript"],
+        tech_stack=["React", "FastAPI", "Redis"],
+        project_experiences=[
+            {
+                "name": "Search Ranking Engine",
+                "role": "Lead Engineer",
+                "summary": "Built ranking pipeline, caching, and search relevance tuning",
+                "technologies": ["React", "FastAPI", "Redis"],
+            }
+        ],
+        awards=[
+            {
+                "title": "Search Innovation Award",
+                "issuer": "Internal Hackathon",
+                "year": "2024",
+                "summary": "Won for ranking quality improvements",
+            }
+        ],
+    )
+    drafts = [
+        make_draft(
+            "portrait-fit",
+            description_text=(
+                "React FastAPI Redis role focused on ranking pipeline, search relevance, "
+                "and candidate experience improvements"
+            ),
+            requirements_text="React FastAPI Redis search relevance",
+        ),
+        make_draft(
+            "generic-fit",
+            description_text="React TypeScript UI implementation",
+            requirements_text="React TypeScript",
+        ),
+    ]
+
+    matches = matching_service.filter_and_score(
+        profile=profile,
+        drafts=drafts,
+        requested_targets=["Frontend Engineer"],
+        requested_cities=[],
+        requested_keywords=[],
+        salary_floor=0,
+    )
+
+    assert matches[0].draft.job_id == "portrait-fit"
+    assert "FastAPI" in matches[0].highlights

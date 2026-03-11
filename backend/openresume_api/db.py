@@ -267,6 +267,51 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
     )
 
 
+def _migrate_candidate_profiles(connection: sqlite3.Connection) -> None:
+    columns = _table_columns(connection, "candidateprofile")
+    if not columns:
+        return
+
+    _add_column_if_missing(
+        connection,
+        "candidateprofile",
+        "raw_text",
+        "raw_text TEXT NOT NULL DEFAULT ''",
+    )
+    _add_column_if_missing(
+        connection,
+        "candidateprofile",
+        "tech_stack",
+        "tech_stack TEXT NOT NULL DEFAULT '[]'",
+    )
+    _add_column_if_missing(
+        connection,
+        "candidateprofile",
+        "project_experiences",
+        "project_experiences TEXT NOT NULL DEFAULT '[]'",
+    )
+    _add_column_if_missing(
+        connection,
+        "candidateprofile",
+        "awards",
+        "awards TEXT NOT NULL DEFAULT '[]'",
+    )
+    connection.execute(
+        """
+        UPDATE candidateprofile
+        SET raw_text = COALESCE(raw_text, ''),
+            tech_stack = COALESCE(NULLIF(tech_stack, ''), ?),
+            project_experiences = COALESCE(NULLIF(project_experiences, ''), ?),
+            awards = COALESCE(NULLIF(awards, ''), ?)
+        """,
+        (
+            json.dumps([], ensure_ascii=False),
+            json.dumps([], ensure_ascii=False),
+            json.dumps([], ensure_ascii=False),
+        ),
+    )
+
+
 def _migrate_application_attempts(connection: sqlite3.Connection) -> None:
     if not _table_columns(connection, "applicationattempt"):
         return
@@ -397,6 +442,7 @@ def run_compat_migrations() -> None:
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(settings.database_path)
     try:
+        _migrate_candidate_profiles(connection)
         _migrate_search_sessions(connection)
         _migrate_application_attempts(connection)
         _rebuild_derived_tables_if_needed(connection)

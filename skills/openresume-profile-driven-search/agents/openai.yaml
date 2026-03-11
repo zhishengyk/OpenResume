@@ -1,0 +1,4 @@
+interface:
+  display_name: "Profile-Driven Search"
+  short_description: "Implement and review OpenResume's portrait-driven search and ranking flow."
+  default_prompt: "Use $openresume-profile-driven-search to wire enriched candidate profiles into Search defaults, cache invalidation, and ranking."

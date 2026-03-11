@@ -8,6 +8,7 @@ from ..career_collectors import career_collector_runner, filter_sources, load_so
 from ..config import settings
 from ..models import CandidateProfile, JobListing
 from ..schemas import PlatformCapabilityResponse, SearchSessionCreate
+from ..services.profile import profile_service
 from ..services.rules import rule_pack_service
 from .base import GuidedApplyOutcome, NormalizedJobDraft, PlatformDataError
 
@@ -81,15 +82,27 @@ class OfficialAdapter:
         search: SearchSessionCreate,
         profile: CandidateProfile,
     ) -> list[NormalizedJobDraft]:
+        enhanced_search = search.model_copy(
+            update={
+                "job_targets": profile_service.build_search_keyword_basis(
+                    search.job_targets,
+                    profile,
+                )
+            }
+        )
         all_sources = load_sources()
         sources = filter_sources(
             all_sources,
-            variants=search.source_variants or None,
-            companies=search.source_companies or None,
+            variants=enhanced_search.source_variants or None,
+            companies=enhanced_search.source_companies or None,
         )
         if not sources:
             raise PlatformDataError("请至少选择一个招聘类型或公司。")
-        run_results = await career_collector_runner.run(list(sources), search, profile)
+        run_results = await career_collector_runner.run(
+            list(sources),
+            enhanced_search,
+            profile,
+        )
 
         stats = {
             "sources_declared": len(sources),

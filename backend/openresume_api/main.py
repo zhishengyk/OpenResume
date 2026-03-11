@@ -88,8 +88,13 @@ def profile_response(profile: CandidateProfile) -> dict:
         "degree": profile.degree,
         "skills": profile.skills,
         "must_have_keywords": profile.must_have_keywords,
+        "tech_stack": profile.tech_stack,
+        "project_experiences": profile.project_experiences,
+        "awards": profile.awards,
         "source_filename": profile.source_filename,
         "source_language": profile.source_language,
+        "raw_text": profile.raw_text,
+        "profile_signature": profile_service.profile_signature(profile),
         "updated_at": profile.updated_at,
     }
 

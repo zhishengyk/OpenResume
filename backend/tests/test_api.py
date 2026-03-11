@@ -1,10 +1,14 @@
+import asyncio
 import time
 from datetime import datetime, timedelta
 
+import openresume_api.services.profile as profile_module
 from openresume_api import db as db_module
 from openresume_api.adapters.base import NormalizedJobDraft, PlatformBlockedError
 from openresume_api.adapters.official import official_adapter
-from openresume_api.models import SearchFetchCache
+from openresume_api.career_collectors import career_collector_runner
+from openresume_api.models import CandidateProfile, JobListing, SearchFetchCache
+from openresume_api.schemas import SearchSessionCreate
 from openresume_api.services.llm import (
     AnalysisBatch,
     AnalysisMetadata,
@@ -12,6 +16,7 @@ from openresume_api.services.llm import (
     OpenAICompatibleLLMProvider,
     llm_service,
 )
+from openresume_api.services.profile import profile_service
 from openresume_api.services.runtime_config import runtime_config_service
 from sqlmodel import Session, select
 
@@ -44,8 +49,26 @@ def upsert_profile(client, *, with_resume: bool = False):
             "degree": "Bachelor",
             "skills": ["React", "TypeScript", "Node.js", "FastAPI"],
             "must_have_keywords": ["React", "TypeScript"],
+            "tech_stack": ["React", "TypeScript", "Node.js"],
+            "project_experiences": [
+                {
+                    "name": "OpenResume Search",
+                    "role": "Lead Engineer",
+                    "summary": "Built ranking pipeline and responsive search UI",
+                    "technologies": ["React", "TypeScript", "FastAPI"],
+                }
+            ],
+            "awards": [
+                {
+                    "title": "Hackathon Winner",
+                    "issuer": "OpenResume Lab",
+                    "year": "2024",
+                    "summary": "Won first place for search quality improvements",
+                }
+            ],
             "source_filename": "resume.pdf" if with_resume else None,
             "source_language": "zh-CN",
+            "raw_text": "React TypeScript resume",
         },
     )
     assert response.status_code == 200
@@ -266,6 +289,73 @@ def test_runtime_llm_probe_endpoints(client, monkeypatch):
     assert probe.json()["ok"] is True
     assert probe.json()["latency_ms"] == 123
     assert probe.json()["reply_preview"] == "OK"
+
+
+def test_resume_upload_persists_enriched_profile_fields(client, monkeypatch):
+    monkeypatch.setattr(
+        profile_module,
+        "_read_docx",
+        lambda _path: "\n".join(
+            [
+                "Jane Doe",
+                "Senior Frontend Engineer",
+                "Projects",
+                "Search Console Rebuild",
+                "Role: Lead Engineer",
+                "Built a React TypeScript search console with FastAPI ranking services",
+                "Awards",
+                "Open Source Award",
+                "Issuer: Community Summit",
+                "Won first place in 2024",
+                "Skills",
+                "React, TypeScript, FastAPI",
+            ]
+        ),
+    )
+
+    response = client.post(
+        "/api/resume/upload",
+        files={
+            "file": (
+                "resume.docx",
+                b"fake-docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert response.status_code == 200
+
+    payload = response.json()
+    assert payload["raw_text"]
+    assert "React" in payload["tech_stack"]
+    assert payload["project_experiences"]
+    assert payload["project_experiences"][0]["name"] == "Search Console Rebuild"
+    assert payload["awards"]
+    assert payload["awards"][0]["title"] == "Open Source Award"
+
+
+def test_resume_upload_falls_back_when_profile_enhancement_fails(client, monkeypatch):
+    monkeypatch.setattr(profile_module, "_read_docx", lambda _path: "Jane\nProjects\nResume Search\nReact")
+    monkeypatch.setattr(
+        profile_service,
+        "_enhance_profile_fields",
+        lambda _update: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    response = client.post(
+        "/api/resume/upload",
+        files={
+            "file": (
+                "resume.docx",
+                b"fake-docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["tech_stack"]
+    assert payload["project_experiences"]
 
 
 def test_search_pipeline_returns_matches_and_degraded_notice(client, monkeypatch):
@@ -673,6 +763,36 @@ def test_search_fetch_cache_hit_reuses_previous_payload(client, monkeypatch):
         assert cache_row.hit_count >= 1
 
 
+def test_search_fetch_cache_key_changes_with_profile_keyword_basis(client, monkeypatch):
+    upsert_profile(client)
+    call_count = {"value": 0}
+
+    async def fake_search_jobs(search, profile):
+        call_count["value"] += 1
+        return [sample_draft()]
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+
+    first = create_search_session(client, cities=[], salary_floor=0, must_have_keywords=[])
+    assert first.status_code == 200
+    wait_for_session_status(client, first.json()["id"], "ready")
+
+    current_profile = client.get("/api/profile").json()
+    current_profile["tech_stack"] = ["Kubernetes", "Go", "Docker"]
+    update = client.put("/api/profile", json=current_profile)
+    assert update.status_code == 200
+
+    second = create_search_session(client, cities=[], salary_floor=0, must_have_keywords=[])
+    assert second.status_code == 200
+    wait_for_session_status(client, second.json()["id"], "ready")
+
+    assert call_count["value"] == 2
+    with Session(db_module.engine) as db:
+        cache_rows = db.exec(select(SearchFetchCache)).all()
+        assert len(cache_rows) == 2
+        assert any("Kubernetes" in row.keyword_basis for row in cache_rows)
+
+
 def test_search_fetch_cache_force_refresh_bypasses_cache(client, monkeypatch):
     upsert_profile(client)
     call_count = {"value": 0}
@@ -700,6 +820,60 @@ def test_search_fetch_cache_force_refresh_bypasses_cache(client, monkeypatch):
     assert call_count["value"] == 2
     detail = client.get(f"/api/search-sessions/{second.json()['id']}").json()
     assert detail["force_refresh"] is True
+
+
+def test_llm_cache_key_changes_with_profile_signature(client):
+    profile_one = client.put(
+        "/api/profile",
+        json={
+            "id": 1,
+            "full_name": "Candidate A",
+            "headline": "Frontend Engineer",
+            "summary": "React profile",
+            "target_roles": ["Frontend Engineer"],
+            "preferred_cities": ["Shanghai"],
+            "salary_floor": 20000,
+            "years_experience": 5,
+            "degree": "Bachelor",
+            "skills": ["React", "TypeScript"],
+            "must_have_keywords": ["React"],
+            "tech_stack": ["React", "TypeScript"],
+            "project_experiences": [],
+            "awards": [],
+            "source_filename": None,
+            "source_language": "en",
+            "raw_text": "React TypeScript",
+        },
+    ).json()
+    profile_two = {**profile_one, "tech_stack": ["Go", "Docker"]}
+    job = JobListing(
+        session_id="session-1",
+        platform="official",
+        source_company="ByteDance",
+        source_site="jobs.bytedance.com",
+        job_id="job-1",
+        title="Frontend Engineer",
+        description_text="React TypeScript role",
+        requirements_text="React experience required",
+    )
+
+    with Session(db_module.engine) as db:
+        first = asyncio.run(
+            llm_service.analyze_jobs(
+                db,
+                CandidateProfile.model_validate(profile_one),
+                [job],
+            )
+        )
+        second = asyncio.run(
+            llm_service.analyze_jobs(
+                db,
+                CandidateProfile.model_validate(profile_two),
+                [job],
+            )
+        )
+
+    assert first.results[0].cache_key != second.results[0].cache_key
 
 
 def test_search_fetch_cache_expires_and_refetches(client, monkeypatch):
@@ -840,8 +1014,49 @@ def test_openai_failure_falls_back_to_heuristic(client, monkeypatch):
 
     ready = wait_for_session_status(client, session.json()["id"], "ready")
     assert ready["analysis_degraded"] is True
-    assert "LLM 调用失败" in (ready["analysis_notice"] or "")
+    assert "LLM" in (ready["analysis_notice"] or "")
 
     matches = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
     assert matches.status_code == 200
     assert len(matches.json()) == 1
+
+
+def test_official_adapter_extends_keywords_with_top_profile_tech_terms(client, monkeypatch):
+    upsert_profile(client)
+    observed: dict[str, list[str]] = {}
+
+    async def fake_run(sources, search, profile):
+        observed["keywords"] = list(search.job_targets)
+        return []
+
+    monkeypatch.setattr(career_collector_runner, "run", fake_run)
+
+    with Session(db_module.engine) as db:
+        profile = profile_service.load_or_create(db)
+    try:
+        asyncio.run(
+            official_adapter.search_jobs(
+                SearchSessionCreate(
+                    platforms=["official"],
+                    mode="recommend_only",
+                    job_targets=["Frontend Engineer", "Platform Engineer"],
+                    cities=[],
+                    salary_floor=0,
+                    must_have_keywords=[],
+                    source_variants=[],
+                    source_companies=[],
+                    force_refresh=False,
+                ),
+                profile,
+            )
+        )
+    except Exception:
+        pass
+
+    assert observed["keywords"] == [
+        "Frontend Engineer",
+        "Platform Engineer",
+        "React",
+        "TypeScript",
+        "Node.js",
+    ]

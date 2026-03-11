@@ -6,6 +6,20 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+class ProjectExperienceItem(BaseModel):
+    name: str = ""
+    role: str = ""
+    summary: str = ""
+    technologies: list[str] = Field(default_factory=list)
+
+
+class AwardItem(BaseModel):
+    title: str = ""
+    issuer: str = ""
+    year: str = ""
+    summary: str = ""
+
+
 class CandidateProfileUpdate(BaseModel):
     id: int | None = 1
     full_name: str = ""
@@ -18,8 +32,12 @@ class CandidateProfileUpdate(BaseModel):
     degree: str = ""
     skills: list[str] = Field(default_factory=list)
     must_have_keywords: list[str] = Field(default_factory=list)
+    tech_stack: list[str] = Field(default_factory=list)
+    project_experiences: list[ProjectExperienceItem] = Field(default_factory=list)
+    awards: list[AwardItem] = Field(default_factory=list)
     source_filename: str | None = None
     source_language: str = "zh-CN"
+    raw_text: str = ""
     updated_at: datetime | None = None
 
 

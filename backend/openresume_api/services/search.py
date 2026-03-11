@@ -24,6 +24,7 @@ from .events import event_bus
 from .llm import llm_service
 from .matching import matching_service
 from .platform_gateway import platform_gateway
+from .profile import profile_service
 from .risk import risk_control_service
 
 LLM_ANALYSIS_LIMIT = 120
@@ -125,11 +126,7 @@ class SearchService:
         payload: SearchSessionCreate,
         profile: CandidateProfile,
     ) -> dict[str, Any]:
-        keywords = [
-            keyword.strip()
-            for keyword in (payload.job_targets or profile.target_roles)
-            if keyword.strip()
-        ]
+        keywords = profile_service.build_search_keyword_basis(payload.job_targets, profile)
         identity = {
             "platforms": sorted(dict.fromkeys(payload.platforms)),
             "source_variants": sorted(dict.fromkeys(payload.source_variants or [])),
