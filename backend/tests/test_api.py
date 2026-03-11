@@ -242,6 +242,11 @@ def test_runtime_config_exposes_llm_status_without_secrets(client):
     assert "\u963f\u91cc\u63a7\u80a1" in payload["official_sources_summary"]
     assert "\u7f8e\u56e2" in payload["official_sources_summary"]
     assert "\u62fc\u591a\u591a" in payload["official_sources_summary"]
+    assert "\u5c0f\u7ea2\u4e66" in payload["official_sources_summary"]
+    assert "\u54d4\u54e9\u54d4\u54e9" in payload["official_sources_summary"]
+    assert "\u5f97\u7269" in payload["official_sources_summary"]
+    assert "\u76d2\u9a6c" in payload["official_sources_summary"]
+    assert "\u7c73\u54c8\u6e38" in payload["official_sources_summary"]
     assert payload["openai_api_key_configured"] is False
     assert payload["openai_api_key_preview"] is None
 

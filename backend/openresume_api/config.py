@@ -133,6 +133,36 @@ class Settings:
     official_aidc_page_size: int = int(
         os.getenv("OPENRESUME_OFFICIAL_AIDC_PAGE_SIZE", "50")
     )
+    official_xiaohongshu_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_XIAOHONGSHU_PAGE_LIMIT", "8")
+    )
+    official_xiaohongshu_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_XIAOHONGSHU_PAGE_SIZE", "100")
+    )
+    official_bilibili_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_BILIBILI_PAGE_LIMIT", "8")
+    )
+    official_bilibili_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_BILIBILI_PAGE_SIZE", "100")
+    )
+    official_dewu_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_DEWU_PAGE_LIMIT", "8")
+    )
+    official_dewu_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_DEWU_PAGE_SIZE", "100")
+    )
+    official_freshippo_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_FRESHIPPO_PAGE_LIMIT", "8")
+    )
+    official_freshippo_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_FRESHIPPO_PAGE_SIZE", "100")
+    )
+    official_mihoyo_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_MIHOYO_PAGE_LIMIT", "8")
+    )
+    official_mihoyo_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_MIHOYO_PAGE_SIZE", "100")
+    )
     disable_browser_open: bool = (
         os.getenv("OPENRESUME_DISABLE_BROWSER_OPEN", "0") == "1"
     )
