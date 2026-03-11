@@ -49,6 +49,12 @@ class Settings:
     official_taobao_page_size: int = int(
         os.getenv("OPENRESUME_OFFICIAL_TAOBAO_PAGE_SIZE", "50")
     )
+    official_aliyun_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_ALIYUN_PAGE_LIMIT", "8")
+    )
+    official_aliyun_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_ALIYUN_PAGE_SIZE", "50")
+    )
     disable_browser_open: bool = (
         os.getenv("OPENRESUME_DISABLE_BROWSER_OPEN", "0") == "1"
     )

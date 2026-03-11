@@ -19,6 +19,7 @@ Use this skill to turn a company career homepage into real job detail extraction
 
 - ByteDance ATSX: prioritize the canonical `/campus/position` list page over noisy share or keyword pages, then use the signed campus APIs for real list and detail payloads.
 - Taobao or Taotian: treat `zhaopin.taobao.com` as an entry only. Move to `talent.taotian.com/campus/position-list`, obtain the page token, then call the real search endpoints.
+- Aliyun careers: treat `careers.aliyun.com` as a Taotian-like shell with circle-specific channels. Extract `__token__` from HTML, then call `/searchCondition/list` and `/position/search` on the same domain using `_csrf` query + `x-csrf-token`.
 - PDD shell pages: follow `/campus/grad` and `/campus/intern` before concluding the page is empty. The real jobs live behind JSON APIs, not the first HTML response.
 - Tencent dual-site model:
   - `careers.tencent.com` uses `GET /tencentcareer/api/post/Query` with variant attrs (`experienced=1`, `campus=2,5`, `internship=3`), `pageSize<=50`, and possible `gb18030` payloads.
@@ -63,4 +64,4 @@ When adding a new company source, define all three variants in `manifest.py` if 
 
 ## Reference
 
-Read `references/provider-patterns.md` when the site resembles ByteDance ATSX, Taotian custom JS, Tencent dual-site (careers + join.qq), PDD shell pages, Feishu, or a Next.js app.
+Read `references/provider-patterns.md` when the site resembles ByteDance ATSX, Taotian custom JS, Aliyun careers shell, Tencent dual-site (careers + join.qq), PDD shell pages, Feishu, or a Next.js app.
