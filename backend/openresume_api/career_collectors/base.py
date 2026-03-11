@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+import math
 from time import perf_counter
 from typing import Any
 
+from ..config import settings
 from ..models import CandidateProfile
 from ..schemas import SearchSessionCreate
 
@@ -70,9 +72,19 @@ class CollectorRunResult:
 
 class CompanyCollector:
     collector_key = "base"
+    default_variant_count = 3
 
     def matches(self, source: CareerSiteSource) -> bool:
         return source.collector_key == self.collector_key
+
+    def source_job_limit(self, search: SearchSessionCreate) -> int:
+        variant_count = (
+            len({item for item in (search.source_variants or []) if item})
+            or self.default_variant_count
+        )
+        company_job_limit = max(1, int(search.company_job_limit or settings.search_company_job_limit))
+        per_source_limit = math.ceil(company_job_limit / max(1, variant_count))
+        return max(1, min(settings.official_job_limit_per_source, per_source_limit))
 
     def collect(
         self,

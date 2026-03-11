@@ -79,6 +79,8 @@ class SearchSessionCreate(BaseModel):
     must_have_keywords: list[str] = Field(default_factory=list)
     source_variants: list[str] = Field(default_factory=list)
     source_companies: list[str] = Field(default_factory=list)
+    match_limit: int = Field(default=200, ge=1, le=1000)
+    company_job_limit: int = Field(default=200, ge=1, le=1000)
     force_refresh: bool = False
 
 
@@ -108,6 +110,8 @@ class SearchSessionResponse(BaseModel):
     must_have_keywords: list[str]
     source_variants: list[str]
     source_companies: list[str]
+    match_limit: int
+    company_job_limit: int
     force_refresh: bool
     blocked_reason: str | None
     summary: str | None

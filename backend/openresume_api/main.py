@@ -594,6 +594,8 @@ async def create_search_session(payload: SearchSessionCreate, db: SessionDep):
         must_have_keywords=payload.must_have_keywords,
         source_variants=payload.source_variants,
         source_companies=payload.source_companies,
+        match_limit=payload.match_limit,
+        company_job_limit=payload.company_job_limit,
         force_refresh=payload.force_refresh,
     )
     return await search_service.create_session(db, normalized_payload)
@@ -627,6 +629,10 @@ async def open_search_verification(session_id: str, db: SessionDep):
 
 @app.get("/api/search-sessions/{session_id}/matches", response_model=list[JobMatchResponse])
 def get_search_matches(session_id: str, db: SessionDep):
+    session = db.get(SearchSession, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="未找到搜索任务。")
+    match_limit = max(1, min(1000, session.match_limit or settings.search_match_limit))
     matches = db.exec(
         select(JobMatch)
         .where(JobMatch.session_id == session_id)
@@ -716,6 +722,8 @@ def get_search_matches(session_id: str, db: SessionDep):
                 payload["location_options"],
             )
         )
+        if len(responses) >= match_limit:
+            break
     return responses
 
 

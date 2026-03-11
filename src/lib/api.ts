@@ -154,6 +154,8 @@ export const api = {
     must_have_keywords: string[];
     source_variants?: string[];
     source_companies?: string[];
+    match_limit?: number;
+    company_job_limit?: number;
     force_refresh?: boolean;
   }) =>
     request<SearchSession>("/api/search-sessions", {

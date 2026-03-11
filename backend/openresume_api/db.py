@@ -67,6 +67,12 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
         force_refresh_expr = (
             "force_refresh" if "force_refresh" in columns else "0"
         )
+        match_limit_expr = (
+            "match_limit" if "match_limit" in columns else "200"
+        )
+        company_job_limit_expr = (
+            "company_job_limit" if "company_job_limit" in columns else "200"
+        )
         rows = connection.execute(
             f"""
             SELECT
@@ -81,6 +87,8 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                 must_have_keywords,
                 {source_variants_expr},
                 {source_companies_expr},
+                {match_limit_expr},
+                {company_job_limit_expr},
                 {force_refresh_expr},
                 blocked_reason,
                 summary,
@@ -106,6 +114,8 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                 must_have_keywords JSON,
                 source_variants JSON,
                 source_companies JSON,
+                match_limit INTEGER NOT NULL DEFAULT 200,
+                company_job_limit INTEGER NOT NULL DEFAULT 200,
                 force_refresh INTEGER NOT NULL DEFAULT 0,
                 blocked_reason TEXT,
                 summary TEXT,
@@ -131,6 +141,8 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                 must_have_keywords,
                 source_variants,
                 source_companies,
+                match_limit,
+                company_job_limit,
                 force_refresh,
                 blocked_reason,
                 summary,
@@ -158,6 +170,8 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                     must_have_keywords,
                     source_variants,
                     source_companies,
+                    match_limit,
+                    company_job_limit,
                     force_refresh,
                     blocked_reason,
                     summary,
@@ -167,7 +181,7 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                     analysis_notice,
                     created_at,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
@@ -180,6 +194,8 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
                     must_have_keywords,
                     source_variants or json.dumps([], ensure_ascii=False),
                     source_companies or json.dumps([], ensure_ascii=False),
+                    match_limit or 200,
+                    company_job_limit or 200,
                     force_refresh or 0,
                     blocked_reason,
                     summary,
@@ -243,6 +259,18 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
         "force_refresh",
         "force_refresh INTEGER NOT NULL DEFAULT 0",
     )
+    _add_column_if_missing(
+        connection,
+        "searchsession",
+        "match_limit",
+        "match_limit INTEGER NOT NULL DEFAULT 200",
+    )
+    _add_column_if_missing(
+        connection,
+        "searchsession",
+        "company_job_limit",
+        "company_job_limit INTEGER NOT NULL DEFAULT 200",
+    )
 
     if "platform" in columns:
         rows = connection.execute(
@@ -278,6 +306,12 @@ def _migrate_search_sessions(connection: sqlite3.Connection) -> None:
         )
     connection.execute(
         "UPDATE searchsession SET force_refresh = COALESCE(force_refresh, 0)"
+    )
+    connection.execute(
+        "UPDATE searchsession SET match_limit = COALESCE(match_limit, 200)"
+    )
+    connection.execute(
+        "UPDATE searchsession SET company_job_limit = COALESCE(company_job_limit, 200)"
     )
     connection.execute(
         "UPDATE searchsession SET analysis_status = COALESCE(NULLIF(analysis_status, ''), 'ready')"

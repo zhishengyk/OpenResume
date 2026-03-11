@@ -47,18 +47,31 @@ class AntCollector(CompanyCollector):
             user_agent=DEFAULT_USER_AGENT,
             max_pages=max(1, settings.official_ant_page_limit),
             page_size=max(1, settings.official_ant_page_size),
+            page_worker_count=max(1, settings.official_page_worker_count),
         )
-        raw_jobs = provider.collect_jobs(variant=source.variant, keywords=keywords)
-        selected_jobs = raw_jobs[: settings.official_job_limit_per_source]
+        selected_jobs = provider.collect_jobs(
+            variant=source.variant,
+            keywords=keywords,
+            limit=self.source_job_limit(search),
+        )
 
         records: list[CollectedJobRecord] = []
-        for item in selected_jobs:
+        jobs_with_ids = [
+            item for item in selected_jobs if str(item.get("id") or "").strip()
+        ]
+        detail_by_job_id: dict[str, dict[str, Any]] = {}
+        worker_count = min(settings.official_detail_worker_count, len(jobs_with_ids))
+        job_ids = [str(item.get("id") or "").strip() for item in jobs_with_ids]
+        detail_by_job_id = provider.get_job_details(
+            variant=source.variant,
+            job_ids=job_ids,
+            worker_count=worker_count,
+        )
+
+        for item in jobs_with_ids:
             job_id = str(item.get("id") or "")
-            if not job_id:
-                continue
-            detail = provider.get_job_detail(variant=source.variant, job_id=job_id)
             merged = dict(item)
-            merged.update(detail)
+            merged.update(detail_by_job_id.get(job_id) or {})
             record = self._to_record(
                 source,
                 merged,

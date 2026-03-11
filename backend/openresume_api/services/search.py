@@ -12,6 +12,7 @@ from sqlmodel import Session, delete, select
 
 from .. import db as db_module
 from ..adapters.base import NormalizedJobDraft, PlatformBlockedError
+from ..config import settings
 from ..models import (
     AppSetting,
     CandidateProfile,
@@ -33,6 +34,43 @@ FETCH_CACHE_TTL_SECONDS = 60 * 60
 
 
 class SearchService:
+    @staticmethod
+    def _match_limit() -> int:
+        return max(1, settings.search_match_limit)
+
+    @staticmethod
+    def _company_job_limit() -> int:
+        return max(1, settings.search_company_job_limit)
+
+    @staticmethod
+    def _effective_match_limit(payload: SearchSessionCreate) -> int:
+        requested = int(payload.match_limit or settings.search_match_limit)
+        return max(1, min(1000, requested))
+
+    @staticmethod
+    def _effective_company_job_limit(payload: SearchSessionCreate) -> int:
+        requested = int(payload.company_job_limit or settings.search_company_job_limit)
+        return max(1, min(1000, requested))
+
+    def _limit_rule_matches(
+        self,
+        rule_matches,
+        *,
+        match_limit: int,
+        company_job_limit: int,
+    ):
+        limited = []
+        company_counts: dict[str, int] = {}
+        for item in rule_matches:
+            company = item.draft.source_company.strip() or "unknown"
+            if company_counts.get(company, 0) >= company_job_limit:
+                continue
+            limited.append(item)
+            company_counts[company] = company_counts.get(company, 0) + 1
+            if len(limited) >= match_limit:
+                break
+        return limited
+
     def _session_meta_key(self, session_id: str) -> str:
         return f"search_session_meta:{session_id}"
 
@@ -136,6 +174,7 @@ class SearchService:
             "source_variants": sorted(dict.fromkeys(payload.source_variants or [])),
             "source_companies": sorted(dict.fromkeys(payload.source_companies or [])),
             "keyword_basis": sorted(dict.fromkeys(keywords)),
+            "company_job_limit": SearchService._effective_company_job_limit(payload),
         }
 
     @staticmethod
@@ -154,6 +193,8 @@ class SearchService:
             must_have_keywords=list(session.must_have_keywords or []),
             source_variants=list(session.source_variants or []),
             source_companies=list(session.source_companies or []),
+            match_limit=session.match_limit,
+            company_job_limit=session.company_job_limit,
             force_refresh=bool(session.force_refresh),
         )
 
@@ -172,6 +213,8 @@ class SearchService:
             must_have_keywords=payload.must_have_keywords,
             source_variants=payload.source_variants,
             source_companies=payload.source_companies,
+            match_limit=self._effective_match_limit(payload),
+            company_job_limit=self._effective_company_job_limit(payload),
             force_refresh=payload.force_refresh,
             analysis_status="pending",
             analysis_provider="heuristic",
@@ -405,6 +448,11 @@ class SearchService:
                     requested_cities=payload.cities,
                     requested_keywords=payload.must_have_keywords,
                     salary_floor=payload.salary_floor,
+                )
+                rule_matches = self._limit_rule_matches(
+                    rule_matches,
+                    match_limit=self._effective_match_limit(payload),
+                    company_job_limit=self._effective_company_job_limit(payload),
                 )
                 rule_rank_ms = int((perf_counter() - rule_started_at) * 1000)
 

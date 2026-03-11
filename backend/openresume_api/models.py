@@ -56,6 +56,8 @@ class SearchSession(SQLModel, table=True):
     must_have_keywords: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     source_variants: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     source_companies: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    match_limit: int = 200
+    company_job_limit: int = 200
     force_refresh: bool = False
     blocked_reason: str | None = None
     summary: str | None = None

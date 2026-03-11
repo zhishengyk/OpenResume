@@ -7,6 +7,22 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = ROOT_DIR.parent
 
 
+def _default_company_worker_count() -> int:
+    configured = os.getenv("OPENRESUME_OFFICIAL_COMPANY_WORKER_COUNT")
+    if configured:
+        return int(configured)
+    cpu_count = os.cpu_count() or 4
+    return max(4, min(20, cpu_count))
+
+
+def _default_page_worker_count() -> int:
+    configured = os.getenv("OPENRESUME_OFFICIAL_PAGE_WORKER_COUNT")
+    if configured:
+        return int(configured)
+    cpu_count = os.cpu_count() or 4
+    return max(2, min(8, cpu_count))
+
+
 @dataclass(frozen=True)
 class Settings:
     api_host: str = os.getenv("OPENRESUME_API_HOST", "127.0.0.1")
@@ -28,8 +44,16 @@ class Settings:
     official_job_limit_per_source: int = int(
         os.getenv("OPENRESUME_OFFICIAL_JOB_LIMIT_PER_SOURCE", "400")
     )
-    official_company_worker_count: int = int(
-        os.getenv("OPENRESUME_OFFICIAL_COMPANY_WORKER_COUNT", "4")
+    search_match_limit: int = int(
+        os.getenv("OPENRESUME_SEARCH_MATCH_LIMIT", "200")
+    )
+    search_company_job_limit: int = int(
+        os.getenv("OPENRESUME_SEARCH_COMPANY_JOB_LIMIT", "200")
+    )
+    official_company_worker_count: int = _default_company_worker_count()
+    official_page_worker_count: int = _default_page_worker_count()
+    official_detail_worker_count: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_DETAIL_WORKER_COUNT", "6")
     )
     official_bytedance_page_limit: int = int(
         os.getenv("OPENRESUME_OFFICIAL_BYTEDANCE_PAGE_LIMIT", "8")
