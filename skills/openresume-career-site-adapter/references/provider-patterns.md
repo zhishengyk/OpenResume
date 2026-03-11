@@ -34,6 +34,39 @@
 - Keep directory filtering on. The right fix is to land on `position-detail?positionId=...`, not to admit `position-list` or older category pages as jobs.
 - Useful payload fields include title, description, position id, and city or location text. Use payload detail extraction when the detail HTML is still thin.
 
+## Tencent dual official sites (careers + join.qq)
+
+- Fingerprints:
+  - `careers.tencent.com/search.html` with `tencentcareer/api/post/Query`
+  - `join.qq.com/post.html?query=p_2` with `api/v1/position/searchPosition`
+- Do not assume Tencent has a single source. Use:
+  - `careers.tencent.com` as the primary source (all variants)
+  - `join.qq.com` as an additional campus/internship source
+- `careers.tencent.com` list API:
+  - `GET /tencentcareer/api/post/Query`
+  - variant attrs:
+    - experienced: `attrId=1`
+    - campus: `attrId=2,5`
+    - internship: `attrId=3`
+  - enforce `pageSize <= 50`
+  - decode fallback: `utf-8` then `gb18030`
+- `join.qq.com` mapping and list APIs:
+  - `GET /api/v1/position/getProjectMapping?lang=zh-cn`
+  - `POST /api/v1/position/searchPosition`
+  - send payload with:
+    - `projectMappingIdList`
+    - `keyword`, `pageIndex`, `pageSize`
+    - empty filters (`bgList`, `workCityList`, `recruitCityList`, `positionFidList`) unless explicitly needed
+- Mapping strategy for `projectMappingIdList`:
+  - campus: include `recruitType=1` and selected `recruitType=999` non-intern projects
+  - internship: include `recruitType=2` and selected `recruitType=999` intern projects
+  - do not guess static mapping ids when `getProjectMapping` is available
+- Known pitfalls:
+  - Chinese keywords on `careers.tencent.com` may under-recall (for example `前端工程师`), so expand with stable English aliases before concluding zero.
+  - `projectId` often behaves as legacy/compat field; prefer `projectMappingIdList`.
+  - join.qq list payload can be summary-only; keep robust fallback mapping and generate detail URL when `positionUrl` is empty.
+  - Merge and dedupe Tencent results across sources by stable job id (`PostId` / `postId`) and source domain.
+
 ## PDD campus shell
 
 - Fingerprints: `careers.pddglobalhr.com`, sparse Next-like shell page, campus tabs, empty first-response HTML.

@@ -66,6 +66,7 @@ export function SearchPage() {
   const [mustHaveKeywords, setMustHaveKeywords] = useState("");
   const [selectedVariants, setSelectedVariants] = useState<string[]>([]);
   const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
+  const [forceRefresh, setForceRefresh] = useState(false);
   const [filtersCollapsed, setFiltersCollapsed] = useState(initialCollapsedState);
 
   const platformsQuery = useQuery({
@@ -152,6 +153,7 @@ export function SearchPage() {
         must_have_keywords: splitCommaValues(mustHaveKeywords),
         source_variants: selectedVariants.length > 0 ? selectedVariants : undefined,
         source_companies: selectedCompanies.length > 0 ? selectedCompanies : undefined,
+        force_refresh: forceRefresh,
       }),
     onSuccess: (session) => {
       queryClient.invalidateQueries({ queryKey: ["search-sessions"] });
@@ -173,7 +175,7 @@ export function SearchPage() {
       <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
         <p className="text-xs uppercase tracking-[0.24em] text-slate">搜索职位</p>
         <h1 className="mt-3 font-display text-5xl text-ink">
-          当前官网搜索接入字节跳动，并并发抓取社招、校招与实习。
+          当前官网搜索接入字节跳动与腾讯，并并发抓取社招、校招与实习。
         </h1>
         <p className="mt-4 max-w-3xl text-sm leading-7 text-slate">
           搜索时会从代码清单并发抓取职位，并在本地完成清洗和排序。筛选栏仅控制来源范围，
@@ -309,6 +311,14 @@ export function SearchPage() {
             </div>
 
             <div className="mt-6 flex flex-wrap items-center gap-3">
+              <label className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper px-4 py-2 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  checked={forceRefresh}
+                  onChange={(event) => setForceRefresh(event.target.checked)}
+                />
+                强制刷新（跳过缓存）
+              </label>
               {mode === "guided_apply" && !guidedApplyEnabled ? (
                 <button
                   type="button"

@@ -1,114 +1,74 @@
 ---
 name: openresume-recruitment-variants
-description: Define and implement recruitment type variants (experienced/campus/internship) for career site adapters. Use when adding new company sources, updating existing extractors, or ensuring variant compliance across the pipeline.
+description: Define and implement recruitment type variants (experienced/campus/internship) for career collectors. Use when adding a new company source, extending an existing company with another official endpoint, mapping provider-specific variant parameters, or validating source filtering consistency across backend and frontend.
 ---
 
 # OpenResume Recruitment Variants
 
-This skill defines the standard recruitment type variants that all career site adapters must support.
+Use this skill to keep variant behavior consistent when adding or modifying official job sources.
 
 ## Standard Variants
 
-| Variant | Chinese Label | English Label | Target Audience |
-|---------|---------------|---------------|-----------------|
-| `experienced` | 社招 | Social Recruitment | Experienced professionals |
-| `campus` | 校招 | Campus Recruitment | Fresh graduates |
-| `internship` | 实习 | Internship | Current students |
+| Variant | Label (zh-CN) | Target Audience |
+|---------|----------------|-----------------|
+| `experienced` | `社招` | Experienced professionals |
+| `campus` | `校招` | Fresh graduates |
+| `internship` | `实习` | Students |
 
 ## Implementation Checklist
 
-When adding or updating a company adapter, ensure:
+1. Define three sources per company in `career_collectors/manifest.py` when the site supports them.
+2. Keep source key format as `{company_key}-{variant}`.
+3. Keep a single `collector_key` per company unless architecture boundaries are truly different.
+4. Put provider-specific logic in `career_collectors/providers/`.
+5. Put final field mapping to `CollectedJobRecord` in `career_collectors/companies/{company}.py`.
+6. Ensure `filter_sources` and runtime summary remain correct after source expansion.
 
-### 1. Source Definition (manifest.py)
+## Small-Change Extension Rule
 
-```python
-SOURCES: tuple[CareerSiteSource, ...] = (
-    CareerSiteSource(
-        key="{company}-experienced",
-        company_name="公司名称",
-        entry_url="https://...",
-        source_site="jobs.company.com",
-        collector_key="{company}",
-        variant="experienced",
-        label="公司社招",
-    ),
-    CareerSiteSource(
-        key="{company}-campus",
-        company_name="公司名称",
-        entry_url="https://...",
-        source_site="jobs.company.com",
-        collector_key="{company}",
-        variant="campus",
-        label="公司校招",
-    ),
-    CareerSiteSource(
-        key="{company}-internship",
-        company_name="公司名称",
-        entry_url="https://...",
-        source_site="jobs.company.com",
-        collector_key="{company}",
-        variant="internship",
-        label="公司实习",
-    ),
-)
-```
+For repeated work where the change is small:
 
-### 2. Collector Implementation
+1. Extend existing skill docs first.
+2. Extend existing company collector first.
+3. Add one new provider and merge results in the existing collector.
+4. Avoid creating a parallel company collector unless required by data ownership or schema.
 
-The collector must handle all three variants:
+## Multi-Provider Merge Rules
 
-```python
-VARIANT_CONFIGS = {
-    "experienced": VariantConfig(...),
-    "campus": VariantConfig(...),
-    "internship": VariantConfig(...),
-}
-```
+When one company has multiple official domains:
 
-### 3. API Endpoints
+1. Keep public variant names canonical (`experienced`, `campus`, `internship`).
+2. Translate provider-specific params only inside provider classes.
+3. Merge and dedupe provider outputs before mapping to `CollectedJobRecord`.
+4. Preserve true origin domain in `source_site`.
+5. Keep API request/response schemas unchanged unless absolutely necessary.
 
-- `GET /api/sources` - Returns all sources with variant field
-- `GET /api/source-variants` - Returns available variants list
-- `POST /api/search-sessions` - Accepts `source_variants` filter
+## Tencent Mapping Template
 
-### 4. Frontend Integration
+Use this mapping when adapting Tencent official sources:
 
-Frontend already has standard labels in [SearchFilterSidebar.tsx](file:///d:/my%20project/OpenResume/src/components/SearchFilterSidebar.tsx):
+| Variant | careers.tencent.com | join.qq.com |
+|---------|---------------------|-------------|
+| `experienced` | `attrId=1` | not used |
+| `campus` | `attrId=2,5` | use `projectMappingIdList` from campus-focused mapping records |
+| `internship` | `attrId=3` | use `projectMappingIdList` from internship-focused mapping records |
 
-```typescript
-const VARIANT_LABELS: Record<string, string> = {
-  experienced: "社招",
-  campus: "校招",
-  internship: "实习",
-};
-```
+Recommended pattern:
 
-## Variant Detection Patterns
+1. Keep `careers.tencent.com` as baseline provider for all variants.
+2. Merge `join.qq.com` into `campus` and `internship`.
+3. Deduplicate by stable job id (`PostId`/`postId`) and normalized key.
 
-### URL Patterns
+## Validation Checklist
 
-| Variant | Common URL Patterns |
-|---------|---------------------|
-| experienced | `/experienced`, `/social`, `/society`, `/job` |
-| campus | `/campus`, `/grad`, `/graduate`, `/fresh` |
-| internship | `/intern`, `/internship`, `/trainee` |
-
-### API Parameters
-
-| Variant | Common Parameters |
-|---------|-------------------|
-| experienced | `portal_type=2`, `type=social`, `recruitType=1` |
-| campus | `portal_type=3`, `type=campus`, `recruitType=2`, `campusType=freshman` |
-| internship | `type=intern`, `recruitType=3`, `campusType=internship` |
-
-## Rules
-
-1. Every company source MUST define all three variants if the target site supports them
-2. If a site only supports a subset, document the limitation in the source definition
-3. Variant values must be lowercase: `experienced`, `campus`, `internship`
-4. Source key format: `{company_key}-{variant}`
-5. Labels should follow pattern: `{公司名}{类型}` (e.g., "字节跳动社招")
+1. Add provider unit tests for variant mapping, pagination stop, dedupe, encoding fallback.
+2. Add collector unit tests for record mapping and source-site behavior.
+3. Update manifest/filter tests if source list changes.
+4. Run at least:
+   - `pytest -q tests/test_career_collectors.py`
+   - provider-specific tests
+   - related API tests if summary copy or source filters changed
 
 ## Reference
 
-Read `references/provider-patterns.md` for provider-specific variant implementations.
+Read `../openresume-career-site-adapter/references/provider-patterns.md` for provider-level reverse-engineering patterns.

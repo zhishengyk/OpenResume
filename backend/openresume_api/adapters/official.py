@@ -39,6 +39,11 @@ def _draft_from_record(record) -> NormalizedJobDraft:
     )
 
 
+def _connected_companies_text() -> str:
+    companies = list(dict.fromkeys(source.company_name for source in load_sources()))
+    return "、".join(companies) if companies else "暂无公司"
+
+
 class OfficialAdapter:
     platform = "official"
 
@@ -48,7 +53,7 @@ class OfficialAdapter:
     def capability(self) -> PlatformCapabilityResponse:
         return PlatformCapabilityResponse(
             platform=self.platform,
-            label="字节跳动官网",
+            label="招聘官网",
             search_supported=True,
             detail_parse_supported=True,
             review_open_supported=True,
@@ -135,8 +140,7 @@ class OfficialAdapter:
         self.last_run_stats = stats
         if not results:
             raise PlatformDataError(
-                "当前没有任何已接入公司返回职位。"
-                "本版本仅启用字节跳动社招和校招。"
+                f"当前没有任何已接入公司返回职位。当前来源：{_connected_companies_text()}。"
             )
         return results
 
@@ -155,9 +159,7 @@ class OfficialAdapter:
         verification_url = job.apply_url
         return GuidedApplyOutcome(
             status="needs_verification",
-            message=(
-                "请在应用内验证窗口完成官网登录或验证码，再继续本次投递。"
-            ),
+            message="请在应用内验证窗口完成官网登录或验证码，再继续本次投递。",
             verification_url=verification_url,
             launch_url=verification_url,
             context={

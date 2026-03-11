@@ -71,6 +71,7 @@ export interface SearchSession {
   must_have_keywords: string[];
   source_variants: string[];
   source_companies: string[];
+  force_refresh: boolean;
   created_at: string;
   updated_at: string;
   blocked_reason?: string | null;
@@ -78,6 +79,13 @@ export interface SearchSession {
   analysis_provider: string;
   analysis_degraded: boolean;
   analysis_notice?: string | null;
+}
+
+export interface JobLocationOption {
+  listing_id: string;
+  location_city: string;
+  location_raw: string;
+  apply_url: string;
 }
 
 export interface JobMatch {
@@ -100,6 +108,11 @@ export interface JobMatch {
   skills_extracted: string[];
   posted_at?: string | null;
   apply_url: string;
+  location_display: string;
+  location_cities: string[];
+  location_options: JobLocationOption[];
+  is_merged: boolean;
+  merged_count: number;
   salary_raw: string;
   salary_min?: number | null;
   salary_max?: number | null;

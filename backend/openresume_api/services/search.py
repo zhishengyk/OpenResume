@@ -1,14 +1,24 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
+import hashlib
+import json
+from typing import Any
 
 from fastapi import HTTPException
-from sqlmodel import Session, delete
+from sqlmodel import Session, delete, select
 
 from .. import db as db_module
 from ..adapters.base import NormalizedJobDraft, PlatformBlockedError
-from ..models import AppSetting, CandidateProfile, JobListing, JobMatch, SearchSession
+from ..models import (
+    AppSetting,
+    CandidateProfile,
+    JobListing,
+    JobMatch,
+    SearchFetchCache,
+    SearchSession,
+)
 from ..schemas import SearchSessionCreate
 from .events import event_bus
 from .llm import llm_service
@@ -17,6 +27,7 @@ from .platform_gateway import platform_gateway
 from .risk import risk_control_service
 
 LLM_ANALYSIS_LIMIT = 120
+FETCH_CACHE_TTL_SECONDS = 60 * 60
 
 
 class SearchService:
@@ -43,6 +54,96 @@ class SearchService:
         return dict(setting.value or {})
 
     @staticmethod
+    def _parse_dt(value: Any) -> datetime | None:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value))
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _serialize_draft(draft: NormalizedJobDraft) -> dict[str, Any]:
+        return {
+            "source_company": draft.source_company,
+            "source_site": draft.source_site,
+            "job_id": draft.job_id,
+            "title": draft.title,
+            "department": draft.department,
+            "employment_type": draft.employment_type,
+            "location_raw": draft.location_raw,
+            "location_city": draft.location_city,
+            "location_country": draft.location_country,
+            "remote_type": draft.remote_type,
+            "description_html": draft.description_html,
+            "description_text": draft.description_text,
+            "requirements_text": draft.requirements_text,
+            "skills_extracted": list(draft.skills_extracted),
+            "posted_at": draft.posted_at.isoformat() if draft.posted_at else None,
+            "apply_url": draft.apply_url,
+            "salary_raw": draft.salary_raw,
+            "salary_min": draft.salary_min,
+            "salary_max": draft.salary_max,
+            "lang": draft.lang,
+            "crawl_time": draft.crawl_time.isoformat() if draft.crawl_time else None,
+            "raw_payload": dict(draft.raw_payload or {}),
+        }
+
+    def _deserialize_drafts(self, payload_json: list[dict[str, Any]]) -> list[NormalizedJobDraft]:
+        drafts: list[NormalizedJobDraft] = []
+        for item in payload_json:
+            drafts.append(
+                NormalizedJobDraft(
+                    source_company=str(item.get("source_company") or ""),
+                    source_site=str(item.get("source_site") or ""),
+                    job_id=str(item.get("job_id") or ""),
+                    title=str(item.get("title") or ""),
+                    department=str(item.get("department") or ""),
+                    employment_type=str(item.get("employment_type") or ""),
+                    location_raw=str(item.get("location_raw") or ""),
+                    location_city=str(item.get("location_city") or ""),
+                    location_country=str(item.get("location_country") or ""),
+                    remote_type=str(item.get("remote_type") or "unknown"),
+                    description_html=str(item.get("description_html") or ""),
+                    description_text=str(item.get("description_text") or ""),
+                    requirements_text=str(item.get("requirements_text") or ""),
+                    skills_extracted=list(item.get("skills_extracted") or []),
+                    posted_at=self._parse_dt(item.get("posted_at")),
+                    apply_url=str(item.get("apply_url") or ""),
+                    salary_raw=str(item.get("salary_raw") or ""),
+                    salary_min=item.get("salary_min"),
+                    salary_max=item.get("salary_max"),
+                    lang=str(item.get("lang") or "zh-CN"),
+                    crawl_time=self._parse_dt(item.get("crawl_time")),
+                    raw_payload=dict(item.get("raw_payload") or {}),
+                )
+            )
+        return drafts
+
+    @staticmethod
+    def _normalized_fetch_inputs(
+        payload: SearchSessionCreate,
+        profile: CandidateProfile,
+    ) -> dict[str, Any]:
+        keywords = [
+            keyword.strip()
+            for keyword in (payload.job_targets or profile.target_roles)
+            if keyword.strip()
+        ]
+        identity = {
+            "platforms": sorted(dict.fromkeys(payload.platforms)),
+            "source_variants": sorted(dict.fromkeys(payload.source_variants or [])),
+            "source_companies": sorted(dict.fromkeys(payload.source_companies or [])),
+            "keyword_basis": sorted(dict.fromkeys(keywords)),
+        }
+        return identity
+
+    @staticmethod
+    def _fetch_cache_key(identity: dict[str, Any]) -> str:
+        content = json.dumps(identity, ensure_ascii=False, sort_keys=True)
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    @staticmethod
     def _payload_from_session(session: SearchSession) -> SearchSessionCreate:
         return SearchSessionCreate(
             platforms=list(session.requested_platforms or []),
@@ -53,6 +154,7 @@ class SearchService:
             must_have_keywords=list(session.must_have_keywords or []),
             source_variants=list(session.source_variants or []),
             source_companies=list(session.source_companies or []),
+            force_refresh=bool(session.force_refresh),
         )
 
     async def create_session(
@@ -70,6 +172,7 @@ class SearchService:
             must_have_keywords=payload.must_have_keywords,
             source_variants=payload.source_variants,
             source_companies=payload.source_companies,
+            force_refresh=payload.force_refresh,
             summary="搜索已开始，正在抓取并清洗官网职位。",
         )
         db.add(session)
@@ -154,9 +257,23 @@ class SearchService:
 
     async def _fetch_platform_jobs(
         self,
+        db: Session,
         payload: SearchSessionCreate,
         profile: CandidateProfile,
-    ) -> list[NormalizedJobDraft]:
+    ) -> tuple[list[NormalizedJobDraft], bool]:
+        now = datetime.utcnow()
+        db.exec(delete(SearchFetchCache).where(SearchFetchCache.expires_at < now))
+        db.commit()
+
+        identity = self._normalized_fetch_inputs(payload, profile)
+        cache_key = self._fetch_cache_key(identity)
+        cached = db.get(SearchFetchCache, cache_key)
+        if cached and not payload.force_refresh and cached.expires_at >= now:
+            cached.hit_count += 1
+            db.add(cached)
+            db.commit()
+            return self._deserialize_drafts(cached.payload_json), True
+
         drafts: list[NormalizedJobDraft] = []
         errors: list[str] = []
         for adapter in platform_gateway.resolve(payload.platforms):
@@ -167,7 +284,36 @@ class SearchService:
             except Exception as error:
                 errors.append(f"{adapter.platform}: {error}")
         if drafts:
-            return drafts
+            fresh_now = datetime.utcnow()
+            serialized = [self._serialize_draft(draft) for draft in drafts]
+            source_filters = {
+                "source_variants": list(identity["source_variants"]),
+                "source_companies": list(identity["source_companies"]),
+            }
+            if cached:
+                cached.platforms = list(identity["platforms"])
+                cached.source_filters = source_filters
+                cached.keyword_basis = list(identity["keyword_basis"])
+                cached.payload_json = serialized
+                cached.created_at = fresh_now
+                cached.expires_at = fresh_now + timedelta(seconds=FETCH_CACHE_TTL_SECONDS)
+                cached.hit_count = 0
+                db.add(cached)
+            else:
+                db.add(
+                    SearchFetchCache(
+                        cache_key=cache_key,
+                        platforms=list(identity["platforms"]),
+                        source_filters=source_filters,
+                        keyword_basis=list(identity["keyword_basis"]),
+                        payload_json=serialized,
+                        created_at=fresh_now,
+                        expires_at=fresh_now + timedelta(seconds=FETCH_CACHE_TTL_SECONDS),
+                        hit_count=0,
+                    )
+                )
+            db.commit()
+            return drafts, False
         raise HTTPException(
             status_code=503,
             detail="；".join(errors) or "所选平台暂时没有抓取到可用职位。",
@@ -186,7 +332,23 @@ class SearchService:
                     "fetching_jobs",
                     "正在抓取官网职位并进行代码级清洗。",
                 )
-                raw_jobs = await self._fetch_platform_jobs(payload, profile)
+                raw_jobs, fetch_cache_hit = await self._fetch_platform_jobs(
+                    db,
+                    payload,
+                    profile,
+                )
+                if payload.force_refresh:
+                    event_bus.publish(
+                        session_id,
+                        "fetch_force_refresh",
+                        "已跳过职位抓取缓存，执行实时抓取。",
+                    )
+                elif fetch_cache_hit:
+                    event_bus.publish(
+                        session_id,
+                        "fetch_cache_hit",
+                        "命中职位抓取缓存，直接复用近 60 分钟结果。",
+                    )
                 official_stats: dict[str, int] = {}
                 for platform in payload.platforms:
                     adapter = platform_gateway.get(platform)

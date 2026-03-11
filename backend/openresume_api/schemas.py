@@ -61,6 +61,7 @@ class SearchSessionCreate(BaseModel):
     must_have_keywords: list[str] = Field(default_factory=list)
     source_variants: list[str] = Field(default_factory=list)
     source_companies: list[str] = Field(default_factory=list)
+    force_refresh: bool = False
 
 
 class SearchEventPayload(BaseModel):
@@ -69,6 +70,13 @@ class SearchEventPayload(BaseModel):
     message: str
     timestamp: datetime
     payload: dict[str, Any] | None = None
+
+
+class JobLocationOptionResponse(BaseModel):
+    listing_id: str
+    location_city: str
+    location_raw: str
+    apply_url: str
 
 
 class JobMatchResponse(BaseModel):
@@ -91,6 +99,11 @@ class JobMatchResponse(BaseModel):
     skills_extracted: list[str]
     posted_at: datetime | None
     apply_url: str
+    location_display: str
+    location_cities: list[str]
+    location_options: list[JobLocationOptionResponse]
+    is_merged: bool
+    merged_count: int
     salary_raw: str
     salary_min: int | None
     salary_max: int | None
