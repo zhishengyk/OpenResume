@@ -6,6 +6,7 @@ import re
 from ..adapters.base import NormalizedJobDraft
 from ..career_collectors.normalization import normalize_city
 from ..models import CandidateProfile
+from .profile import profile_service
 
 
 @dataclass
@@ -18,6 +19,15 @@ class RuleMatch:
 
 
 class MatchingService:
+    @staticmethod
+    def _matched_terms(terms: list[str], lowered_text: str) -> list[str]:
+        matched: list[str] = []
+        for term in terms:
+            normalized = term.lower().strip()
+            if normalized and normalized in lowered_text:
+                matched.append(term)
+        return list(dict.fromkeys(matched))
+
     def _city_matches(self, location_city: str, requested_cities: set[str]) -> bool:
         if not requested_cities:
             return True
@@ -51,7 +61,8 @@ class MatchingService:
             keyword.lower()
             for keyword in requested_keywords or profile.must_have_keywords
         ]
-        profile_skills = {skill.lower(): skill for skill in profile.skills}
+        project_terms = profile_service.project_evidence_terms(profile)
+        award_terms = profile_service.award_evidence_terms(profile)
 
         for draft in drafts:
             combined_text = "\n".join(
@@ -68,35 +79,55 @@ class MatchingService:
             )
             target_match = self._target_matches(combined_text, active_targets)
 
-            matched_keywords = [
-                original
-                for lowered_skill, original in profile_skills.items()
-                if lowered_skill in lowered
-            ]
+            matched_skill_terms = self._matched_terms(profile.skills, lowered)
+            matched_tech_terms = self._matched_terms(profile.tech_stack, lowered)
+            matched_project_terms = self._matched_terms(project_terms, lowered)
+            matched_award_terms = self._matched_terms(award_terms, lowered)
+
+            highlights = list(
+                dict.fromkeys(
+                    matched_tech_terms[:4]
+                    + matched_skill_terms[:4]
+                    + matched_project_terms[:3]
+                    + matched_award_terms[:2]
+                )
+            )
             missing_keywords = [
                 keyword
                 for keyword in requested_keywords or profile.must_have_keywords
                 if keyword.lower() not in lowered
             ]
+            if not missing_keywords and profile.tech_stack:
+                missing_keywords.extend(
+                    [
+                        keyword
+                        for keyword in profile.tech_stack
+                        if keyword.lower() not in lowered
+                    ][:2]
+                )
 
-            skill_component = min(35.0, len(matched_keywords) * 7.0)
-            role_component = 25.0 if target_match else (10.0 if not targets else 3.0)
+            tech_component = min(26.0, len(matched_tech_terms) * 8.0)
+            skill_component = min(18.0, len(matched_skill_terms) * 4.0)
+            project_component = min(14.0, len(matched_project_terms) * 4.0)
+            award_component = min(8.0, len(matched_award_terms) * 3.0)
+            role_component = 22.0 if target_match else (10.0 if not targets else 3.0)
             salary_component = (
-                10.0
+                8.0
                 if salary_floor and salary_match
-                else 6.0
+                else 5.0
                 if not salary_floor
-                else 4.0
+                else 3.0
                 if not salary_known
                 else 1.0
             )
-            location_component = (
-                8.0 if city_match else (4.0 if not cities else 1.0)
-            )
-            freshness_component = 12.0 if draft.posted_at else 6.0
-            requirement_component = 10.0 if draft.requirements_text else 5.0
+            location_component = 6.0 if city_match else (4.0 if not cities else 1.0)
+            freshness_component = 8.0 if draft.posted_at else 4.0
+            requirement_component = 6.0 if draft.requirements_text else 3.0
             base_score = (
-                skill_component
+                tech_component
+                + skill_component
+                + project_component
+                + award_component
                 + role_component
                 + salary_component
                 + location_component
@@ -125,6 +156,10 @@ class MatchingService:
                 risk_flags.append("Role keyword match is weak")
             if must_have and len(missing_keywords) >= max(1, (len(must_have) + 1) // 2):
                 risk_flags.append("Many required keywords missing")
+            if profile.tech_stack and not matched_tech_terms:
+                risk_flags.append("Limited tech stack overlap")
+            if profile.project_experiences and not matched_project_terms:
+                risk_flags.append("No clear project evidence overlap")
             if draft.remote_type.lower() == "onsite":
                 risk_flags.append("Onsite work required")
             if "leader" in lowered or "team lead" in lowered:
@@ -140,7 +175,7 @@ class MatchingService:
                 RuleMatch(
                     draft=draft,
                     rule_score=score,
-                    highlights=matched_keywords[:5],
+                    highlights=highlights[:6],
                     missing_keywords=missing_keywords[:4],
                     risk_flags=risk_flags,
                 )

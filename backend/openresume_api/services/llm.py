@@ -9,6 +9,7 @@ import httpx
 from sqlmodel import Session
 
 from ..models import CandidateProfile, JobListing, LLMAnalysisCache
+from .profile import profile_service
 from .runtime_config import LLMRuntimeConfig, runtime_config_service
 
 
@@ -73,6 +74,7 @@ class LLMProvider(Protocol):
         source_site: str,
         job_id: str,
         content_hash: str,
+        profile_signature: str,
     ) -> str: ...
 
 
@@ -84,7 +86,7 @@ class HeuristicLLMProvider:
             provider=self.name,
             degraded=True,
             notice=notice
-            or "当前仅使用规则/启发式分析。配置 OpenAI 兼容模型后可启用完整排序。",
+            or "Current ranking uses heuristic analysis. Configure an OpenAI-compatible model to enable richer scoring.",
         )
 
     def cache_key(
@@ -93,8 +95,12 @@ class HeuristicLLMProvider:
         source_site: str,
         job_id: str,
         content_hash: str,
+        profile_signature: str,
     ) -> str:
-        value = f"{self.name}:{platform}:{source_site}:{job_id}:{content_hash}"
+        value = (
+            f"{self.name}:{platform}:{source_site}:{job_id}:{content_hash}:"
+            f"{profile_signature}"
+        )
         return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
     async def analyze(
@@ -104,6 +110,9 @@ class HeuristicLLMProvider:
     ) -> list[LLMResult]:
         results: list[LLMResult] = []
         target_roles = {role.lower() for role in profile.target_roles}
+        project_terms = profile_service.project_evidence_terms(profile)
+        award_terms = profile_service.award_evidence_terms(profile)
+        signature = profile_service.profile_signature(profile)
 
         for job in jobs:
             combined_text = "\n".join(
@@ -111,15 +120,21 @@ class HeuristicLLMProvider:
             ).lower()
             overlap = sorted(
                 {
-                    skill
-                    for skill in profile.skills + profile.must_have_keywords
-                    if skill.lower() in combined_text
+                    term
+                    for term in (
+                        profile.skills
+                        + profile.must_have_keywords
+                        + profile.tech_stack
+                        + project_terms
+                        + award_terms
+                    )
+                    if term.lower() in combined_text
                 }
             )
             missing = sorted(
                 {
                     keyword
-                    for keyword in profile.must_have_keywords
+                    for keyword in profile.must_have_keywords + profile.tech_stack[:2]
                     if keyword.lower() not in combined_text
                 }
             )
@@ -131,19 +146,19 @@ class HeuristicLLMProvider:
                 )
                 else 0
             )
-            score = min(100.0, 55.0 + len(overlap) * 7 + role_bonus - len(missing) * 4)
+            score = min(100.0, 55.0 + len(overlap) * 6 + role_bonus - len(missing) * 4)
 
             risk_flags: list[str] = []
             if job.salary_min and profile.salary_floor and job.salary_min < profile.salary_floor:
-                risk_flags.append("薪资低于预期")
+                risk_flags.append("Salary below expectation")
             if "leader" in combined_text or "team lead" in combined_text:
-                risk_flags.append("可能包含管理职责")
+                risk_flags.append("May include people management")
             if job.remote_type.lower() == "onsite":
-                risk_flags.append("需要现场办公")
+                risk_flags.append("Onsite work required")
 
             summary = (
-                f"匹配亮点：{', '.join(overlap[:4]) or '整体工程方向匹配'}。"
-                f"需要关注：{', '.join((missing + risk_flags)[:3]) or '暂未发现明显硬性阻塞项'}。"
+                f"Strong overlap: {', '.join(overlap[:4]) or 'general role direction'}; "
+                f"watchouts: {', '.join((missing + risk_flags)[:3]) or 'no major blockers found'}."
             )
             results.append(
                 LLMResult(
@@ -152,6 +167,7 @@ class HeuristicLLMProvider:
                         job.source_site,
                         job.job_id,
                         job_content_hash(job),
+                        signature,
                     ),
                     job_id=job.job_id,
                     llm_score=score,
@@ -184,10 +200,11 @@ class OpenAICompatibleLLMProvider:
         source_site: str,
         job_id: str,
         content_hash: str,
+        profile_signature: str,
     ) -> str:
         value = (
             f"{self.name}:{self.config.openai_base_url}:{self.config.openai_model}:"
-            f"{platform}:{source_site}:{job_id}:{content_hash}"
+            f"{platform}:{source_site}:{job_id}:{content_hash}:{profile_signature}"
         )
         return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -205,6 +222,9 @@ class OpenAICompatibleLLMProvider:
             "years_experience": profile.years_experience,
             "skills": profile.skills,
             "must_have_keywords": profile.must_have_keywords,
+            "tech_stack": profile.tech_stack,
+            "project_experiences": profile.project_experiences,
+            "awards": profile.awards,
         }
         jobs_blob = [
             {
@@ -285,6 +305,7 @@ class OpenAICompatibleLLMProvider:
         results_by_job = {
             item.get("job_id"): item for item in items if item.get("job_id")
         }
+        signature = profile_service.profile_signature(profile)
 
         results: list[LLMResult] = []
         for job in job_list:
@@ -304,6 +325,7 @@ class OpenAICompatibleLLMProvider:
                         job.source_site,
                         job.job_id,
                         job_content_hash(job),
+                        signature,
                     ),
                     job_id=job.job_id,
                     llm_score=max(0.0, min(100.0, llm_score)),
@@ -333,14 +355,20 @@ class LLMService:
         self,
         db: Session,
         provider: LLMProvider,
+        profile: CandidateProfile,
         jobs: list[JobListing],
     ) -> tuple[list[LLMResult], list[JobListing]]:
         results: list[LLMResult] = []
         fresh_jobs: list[JobListing] = []
+        signature = profile_service.profile_signature(profile)
         for job in jobs:
             content_hash = job_content_hash(job)
             cache_key = provider.cache_key(
-                job.platform, job.source_site, job.job_id, content_hash
+                job.platform,
+                job.source_site,
+                job.job_id,
+                content_hash,
+                signature,
             )
             cached = db.get(LLMAnalysisCache, cache_key)
             if not cached:
@@ -398,8 +426,8 @@ class LLMService:
             return AnalysisBatch(metadata=metadata, results=[])
 
         provider = self._primary_provider()
-        cached_results, fresh_jobs = self._cached_results(db, provider, jobs)
-        
+        cached_results, fresh_jobs = self._cached_results(db, provider, profile, jobs)
+
         fresh_results: list[LLMResult] = []
         final_metadata = provider.metadata
         if fresh_jobs:
@@ -409,14 +437,14 @@ class LLMService:
                     self._persist_results(db, provider, fresh_jobs, fresh_results)
             except Exception as error:
                 fallback = HeuristicLLMProvider(
-                    notice=f"LLM 调用失败，已降级到规则分析。错误：{error}"
+                    notice=f"LLM call failed, falling back to heuristic analysis: {error}"
                 )
                 fresh_results = await fallback.analyze(profile, fresh_jobs)
                 for result in fresh_results:
                     result.analysis_degraded = True
                     result.analysis_notice = fallback.metadata.notice
                 final_metadata = fallback.metadata
-        
+
         return AnalysisBatch(
             metadata=final_metadata,
             results=cached_results + fresh_results,

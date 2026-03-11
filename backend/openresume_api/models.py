@@ -24,6 +24,12 @@ class CandidateProfile(SQLModel, table=True):
     degree: str = ""
     skills: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     must_have_keywords: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    tech_stack: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    project_experiences: list[dict[str, Any]] = Field(
+        default_factory=list,
+        sa_column=Column(JSON),
+    )
+    awards: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
     source_filename: str | None = None
     source_language: str = "zh-CN"
     raw_text: str = ""

@@ -20,6 +20,20 @@ export type ApplicationAttemptStatus =
   | "failed"
   | "cancelled";
 
+export interface ProjectExperience {
+  name: string;
+  role: string;
+  summary: string;
+  technologies: string[];
+}
+
+export interface Award {
+  title: string;
+  issuer: string;
+  year: string;
+  summary: string;
+}
+
 export interface CandidateProfile {
   id: number | null;
   full_name: string;
@@ -32,8 +46,13 @@ export interface CandidateProfile {
   degree: string;
   skills: string[];
   must_have_keywords: string[];
+  tech_stack: string[];
+  project_experiences: ProjectExperience[];
+  awards: Award[];
   source_filename?: string | null;
   source_language: string;
+  raw_text: string;
+  profile_signature?: string | null;
   updated_at?: string | null;
 }
 

@@ -1,9 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Search as SearchIcon, ShieldAlert } from "lucide-react";
+import {
+  AlertTriangle,
+  RotateCcw,
+  Search as SearchIcon,
+  ShieldAlert,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SearchFilterSidebar } from "../components/SearchFilterSidebar";
 import { api } from "../lib/api";
+import {
+  buildProfileUpdateFromDraft,
+  profileToSearchDraftFields,
+  safeReadSearchDraft,
+  SEARCH_DRAFT_VERSION,
+  type SearchProfileDraftFields,
+  type SearchProfileDraftState,
+  writeSearchDraft,
+} from "../lib/profile";
 import { splitCommaValues } from "../lib/utils";
 import type { AutomationMode, PlatformCapability } from "../types";
 
@@ -18,21 +32,31 @@ const modeCards: Array<{
   {
     mode: "recommend_only",
     title: "仅推荐",
-    body: "只抓取、清洗并排序职位，不自动打开职位页面。",
+    body: "抓取、清洗并排序职位，不自动打开投递页面。",
   },
   {
     mode: "review_in_browser",
-    title: "打开职位页",
-    body: "在本地浏览器中打开排序后的职位页面继续查看。",
+    title: "浏览器查看",
+    body: "抓取完成后打开排序后的职位页面，方便继续查看上下文。",
     capabilityFlag: "review_open_supported",
   },
   {
     mode: "guided_apply",
     title: "引导投递",
-    body: "排序完成后，在应用内继续走引导投递流程。",
+    body: "从排序结果继续进入应用内的引导投递流程。",
     capabilityFlag: "guided_apply_supported",
   },
 ];
+
+const emptyDraftFields: SearchProfileDraftFields = {
+  jobTargets: "",
+  cities: "",
+  salaryFloor: "0",
+  mustHaveKeywords: "",
+  techStack: "",
+  projectExperiences: "",
+  awards: "",
+};
 
 function modeSupported(platforms: PlatformCapability[], mode: AutomationMode) {
   const card = modeCards.find((entry) => entry.mode === mode);
@@ -60,18 +84,30 @@ export function SearchPage() {
 
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [mode, setMode] = useState<AutomationMode>("recommend_only");
-  const [jobTargets, setJobTargets] = useState("前端工程师");
-  const [cities, setCities] = useState("");
-  const [salaryFloor, setSalaryFloor] = useState("0");
-  const [mustHaveKeywords, setMustHaveKeywords] = useState("");
   const [selectedVariants, setSelectedVariants] = useState<string[]>([]);
   const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
   const [forceRefresh, setForceRefresh] = useState(false);
   const [filtersCollapsed, setFiltersCollapsed] = useState(initialCollapsedState);
+  const [draftFields, setDraftFields] =
+    useState<SearchProfileDraftFields>(emptyDraftFields);
+  const [draftMeta, setDraftMeta] = useState<{
+    initialized: boolean;
+    profileSignature: string;
+    userEdited: boolean;
+  }>({
+    initialized: false,
+    profileSignature: "",
+    userEdited: false,
+  });
+  const [profileChangedNotice, setProfileChangedNotice] = useState(false);
 
   const platformsQuery = useQuery({
     queryKey: ["platforms"],
     queryFn: api.getPlatforms,
+  });
+  const profileQuery = useQuery({
+    queryKey: ["profile"],
+    queryFn: api.getProfile,
   });
   const appStateQuery = useQuery({
     queryKey: ["app-state"],
@@ -79,7 +115,10 @@ export function SearchPage() {
   });
 
   useEffect(() => {
-    window.localStorage.setItem(FILTER_COLLAPSED_STORAGE_KEY, filtersCollapsed ? "1" : "0");
+    window.localStorage.setItem(
+      FILTER_COLLAPSED_STORAGE_KEY,
+      filtersCollapsed ? "1" : "0",
+    );
   }, [filtersCollapsed]);
 
   useEffect(() => {
@@ -98,6 +137,78 @@ export function SearchPage() {
     });
   }, [platformsQuery.data]);
 
+  useEffect(() => {
+    if (!profileQuery.data) {
+      return;
+    }
+    const nextSignature = profileQuery.data.profile_signature || "";
+    if (!draftMeta.initialized) {
+      const stored = safeReadSearchDraft();
+      if (stored && stored.profileSignature === nextSignature) {
+        setDraftFields(stored.fields);
+        setDraftMeta({
+          initialized: true,
+          profileSignature: stored.profileSignature,
+          userEdited: stored.userEdited,
+        });
+        setProfileChangedNotice(false);
+        return;
+      }
+      if (stored && stored.userEdited) {
+        setDraftFields(stored.fields);
+        setDraftMeta({
+          initialized: true,
+          profileSignature: stored.profileSignature,
+          userEdited: true,
+        });
+        setProfileChangedNotice(true);
+        return;
+      }
+      setDraftFields(profileToSearchDraftFields(profileQuery.data));
+      setDraftMeta({
+        initialized: true,
+        profileSignature: nextSignature,
+        userEdited: false,
+      });
+      setProfileChangedNotice(false);
+      return;
+    }
+
+    if (nextSignature === draftMeta.profileSignature) {
+      setProfileChangedNotice(false);
+      return;
+    }
+    if (draftMeta.userEdited) {
+      setProfileChangedNotice(true);
+      return;
+    }
+    setDraftFields(profileToSearchDraftFields(profileQuery.data));
+    setDraftMeta((current) => ({
+      ...current,
+      profileSignature: nextSignature,
+      userEdited: false,
+    }));
+    setProfileChangedNotice(false);
+  }, [
+    draftMeta.initialized,
+    draftMeta.profileSignature,
+    draftMeta.userEdited,
+    profileQuery.data,
+  ]);
+
+  useEffect(() => {
+    if (!draftMeta.initialized) {
+      return;
+    }
+    const payload: SearchProfileDraftState = {
+      version: SEARCH_DRAFT_VERSION,
+      profileSignature: draftMeta.profileSignature,
+      userEdited: draftMeta.userEdited,
+      fields: draftFields,
+    };
+    writeSearchDraft(payload);
+  }, [draftFields, draftMeta]);
+
   const selectedPlatformCapabilities = useMemo(
     () =>
       (platformsQuery.data || []).filter((item) =>
@@ -115,7 +226,7 @@ export function SearchPage() {
       return;
     }
     setMode("recommend_only");
-  }, [selectedPlatformCapabilities, mode]);
+  }, [mode, selectedPlatformCapabilities]);
 
   const riskStatusQuery = useQuery({
     queryKey: ["risk-status", firstSelectedPlatform],
@@ -138,25 +249,63 @@ export function SearchPage() {
       );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["app-state"] });
+      void queryClient.invalidateQueries({ queryKey: ["app-state"] });
     },
   });
 
+  const updateDraftField = (key: keyof SearchProfileDraftFields, value: string) => {
+    setDraftFields((current) => ({ ...current, [key]: value }));
+    setDraftMeta((current) => ({ ...current, userEdited: true }));
+  };
+
+  const resetFromProfile = () => {
+    if (!profileQuery.data) {
+      return;
+    }
+    setDraftFields(profileToSearchDraftFields(profileQuery.data));
+    setDraftMeta({
+      initialized: true,
+      profileSignature: profileQuery.data.profile_signature || "",
+      userEdited: false,
+    });
+    setProfileChangedNotice(false);
+  };
+
   const searchMutation = useMutation({
-    mutationFn: () =>
-      api.createSearchSession({
+    mutationFn: async () => {
+      const profile = profileQuery.data;
+      if (profile) {
+        const nextProfile = buildProfileUpdateFromDraft(profile, draftFields);
+        const profileChanged =
+          JSON.stringify(nextProfile.tech_stack) !==
+            JSON.stringify(profile.tech_stack) ||
+          JSON.stringify(nextProfile.project_experiences) !==
+            JSON.stringify(profile.project_experiences) ||
+          JSON.stringify(nextProfile.awards) !== JSON.stringify(profile.awards);
+        if (profileChanged) {
+          await api.updateProfile(nextProfile);
+          await queryClient.invalidateQueries({ queryKey: ["profile"] });
+          setDraftMeta((current) => ({
+            ...current,
+            profileSignature: nextProfile.profile_signature || current.profileSignature,
+          }));
+        }
+      }
+
+      return api.createSearchSession({
         platforms: selectedPlatforms,
         mode,
-        job_targets: splitCommaValues(jobTargets),
-        cities: splitCommaValues(cities),
-        salary_floor: Number(salaryFloor),
-        must_have_keywords: splitCommaValues(mustHaveKeywords),
+        job_targets: splitCommaValues(draftFields.jobTargets),
+        cities: splitCommaValues(draftFields.cities),
+        salary_floor: Number(draftFields.salaryFloor || 0),
+        must_have_keywords: splitCommaValues(draftFields.mustHaveKeywords),
         source_variants: selectedVariants.length > 0 ? selectedVariants : undefined,
         source_companies: selectedCompanies.length > 0 ? selectedCompanies : undefined,
         force_refresh: forceRefresh,
-      }),
+      });
+    },
     onSuccess: (session) => {
-      queryClient.invalidateQueries({ queryKey: ["search-sessions"] });
+      void queryClient.invalidateQueries({ queryKey: ["search-sessions"] });
       navigate(`/results?session=${session.id}`);
     },
   });
@@ -168,18 +317,18 @@ export function SearchPage() {
 
   const searchDisabled =
     searchMutation.isPending ||
-    (mode === "guided_apply" && !guidedApplyEnabled);
+    (mode === "guided_apply" && !guidedApplyEnabled) ||
+    !draftMeta.initialized;
 
   return (
     <div className="space-y-6">
       <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
-        <p className="text-xs uppercase tracking-[0.24em] text-slate">搜索职位</p>
+        <p className="text-xs uppercase tracking-[0.24em] text-slate">搜索</p>
         <h1 className="mt-3 font-display text-5xl text-ink">
-          当前官网搜索接入字节跳动与腾讯，并并发抓取社招、校招与实习。
+          用已保存的候选人画像驱动召回和排序，而不是从空白表单开始。
         </h1>
         <p className="mt-4 max-w-3xl text-sm leading-7 text-slate">
-          搜索时会从代码清单并发抓取职位，并在本地完成清洗和排序。筛选栏仅控制来源范围，
-          岗位相关性通过排序体现，不会再因为硬过滤直接丢失候选职位。
+          首次进入会从画像自动填充默认值。只要你改过草稿，搜索页就会保留你的修改，直到你主动从最新画像重置。
         </p>
       </section>
 
@@ -227,98 +376,71 @@ export function SearchPage() {
             })}
           </div>
 
-          <div className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
-            <div className="grid gap-5 md:grid-cols-2">
-              <div className="space-y-3 md:col-span-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-slate">平台</span>
-                <div className="grid gap-3 md:grid-cols-2">
-                  {platformsQuery.data?.map((platform) => {
-                    const checked = selectedPlatforms.includes(platform.platform);
-                    return (
-                      <label
-                        key={platform.platform}
-                        className={`flex items-start gap-3 rounded-2xl border px-4 py-3 ${
-                          platform.selectable
-                            ? "border-ink/10 bg-paper"
-                            : "border-ink/10 bg-paper/60 text-slate"
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={!platform.selectable}
-                          onChange={(event) => {
-                            if (!platform.selectable) {
-                              return;
-                            }
-                            setSelectedPlatforms((current) =>
-                              event.target.checked
-                                ? [...current, platform.platform]
-                                : current.filter((item) => item !== platform.platform),
-                            );
-                          }}
-                          className="mt-1"
-                        />
-                        <div>
-                          <p className="font-semibold text-ink">{platform.label}</p>
-                          <p className="mt-1 text-sm leading-6 text-slate">
-                            {platform.selectable
-                              ? "已接入"
-                              : platform.disabled_reason || "不可用"}
-                          </p>
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
+          <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.24em] text-slate">
+                  基础搜索条件
+                </p>
+                <p className="mt-2 text-sm text-slate">
+                  目标职位仍然是主条件。技术栈和画像证据放在高级区，便于按画像增强并可随时重置。
+                </p>
               </div>
-
-              <label className="space-y-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-slate">薪资下限</span>
-                <input
-                  value={salaryFloor}
-                  onChange={(event) => setSalaryFloor(event.target.value)}
-                  className="w-full rounded-2xl border border-ink/10 bg-paper px-4 py-3 text-sm text-ink outline-none transition focus:border-ink/30"
-                />
-              </label>
-              <label className="space-y-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-slate">目标城市</span>
-                <textarea
-                  rows={4}
-                  value={cities}
-                  onChange={(event) => setCities(event.target.value)}
-                  className="w-full rounded-[24px] border border-ink/10 bg-paper px-4 py-3 text-sm leading-7 text-ink outline-none transition focus:border-ink/30"
-                />
-              </label>
-              <label className="space-y-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-slate">目标职位</span>
-                <textarea
-                  rows={4}
-                  value={jobTargets}
-                  onChange={(event) => setJobTargets(event.target.value)}
-                  className="w-full rounded-[24px] border border-ink/10 bg-paper px-4 py-3 text-sm leading-7 text-ink outline-none transition focus:border-ink/30"
-                />
-              </label>
-              <label className="space-y-2 md:col-span-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-slate">必备关键词</span>
-                <textarea
-                  rows={4}
-                  value={mustHaveKeywords}
-                  onChange={(event) => setMustHaveKeywords(event.target.value)}
-                  className="w-full rounded-[24px] border border-ink/10 bg-paper px-4 py-3 text-sm leading-7 text-ink outline-none transition focus:border-ink/30"
-                />
-              </label>
-            </div>
-
-            <div className="mt-6 flex flex-wrap items-center gap-3">
               <label className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper px-4 py-2 text-sm text-ink">
                 <input
                   type="checkbox"
                   checked={forceRefresh}
                   onChange={(event) => setForceRefresh(event.target.checked)}
                 />
-                强制刷新（跳过缓存）
+                强制刷新
               </label>
+            </div>
+
+            <div className="mt-5 grid gap-5 lg:grid-cols-[1.2fr_1.2fr_0.7fr]">
+              <label className="space-y-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-slate">目标职位</span>
+                <textarea
+                  rows={4}
+                  value={draftFields.jobTargets}
+                  onChange={(event) => updateDraftField("jobTargets", event.target.value)}
+                  className="w-full rounded-[24px] border border-ink/10 bg-paper px-4 py-3 text-sm leading-7 text-ink outline-none transition focus:border-ink/30"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-slate">目标城市</span>
+                <textarea
+                  rows={4}
+                  value={draftFields.cities}
+                  onChange={(event) => updateDraftField("cities", event.target.value)}
+                  className="w-full rounded-[24px] border border-ink/10 bg-paper px-4 py-3 text-sm leading-7 text-ink outline-none transition focus:border-ink/30"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-slate">
+                  薪资下限
+                </span>
+                <input
+                  value={draftFields.salaryFloor}
+                  onChange={(event) => updateDraftField("salaryFloor", event.target.value)}
+                  className="w-full rounded-2xl border border-ink/10 bg-paper px-4 py-3 text-sm text-ink outline-none transition focus:border-ink/30"
+                />
+              </label>
+              <label className="space-y-2 lg:col-span-3">
+                <span className="text-xs uppercase tracking-[0.2em] text-slate">
+                  必备关键词
+                </span>
+                <textarea
+                  rows={3}
+                  value={draftFields.mustHaveKeywords}
+                  onChange={(event) =>
+                    updateDraftField("mustHaveKeywords", event.target.value)
+                  }
+                  className="w-full rounded-[24px] border border-ink/10 bg-paper px-4 py-3 text-sm leading-7 text-ink outline-none transition focus:border-ink/30"
+                />
+              </label>
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-center gap-3">
               {mode === "guided_apply" && !guidedApplyEnabled ? (
                 <button
                   type="button"
@@ -327,7 +449,9 @@ export function SearchPage() {
                   disabled={guidedConsentMutation.isPending}
                 >
                   <ShieldAlert size={16} />
-                  {guidedConsentMutation.isPending ? "正在保存同意..." : "启用引导投递"}
+                  {guidedConsentMutation.isPending
+                    ? "正在保存同意..."
+                    : "启用引导投递"}
                 </button>
               ) : null}
               <button
@@ -346,12 +470,92 @@ export function SearchPage() {
                 {searchErrorMessage}
               </div>
             ) : null}
-          </div>
+          </section>
+
+          <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.24em] text-slate">
+                  画像增强
+                </p>
+                <p className="mt-2 text-sm text-slate">
+                  查看并编辑技术栈、项目证据和奖项摘要，它们会参与搜索默认值、抓取关键词扩展和排序打分。
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={resetFromProfile}
+                className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper px-4 py-2 text-sm font-medium text-ink transition hover:border-ink/20"
+                disabled={!profileQuery.data}
+              >
+                <RotateCcw size={16} />
+                从画像重置
+              </button>
+            </div>
+
+            {profileChangedNotice ? (
+              <div className="mt-4 rounded-[24px] border border-signal/30 bg-signal/15 px-4 py-3 text-sm text-ink">
+                你修改草稿后，已保存画像发生了变化。当前草稿已保留；如果想使用最新画像默认值，请执行重置。
+              </div>
+            ) : null}
+
+            <div className="mt-5 grid gap-5">
+              <label className="space-y-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-slate">技术栈</span>
+                <textarea
+                  rows={3}
+                  value={draftFields.techStack}
+                  onChange={(event) => updateDraftField("techStack", event.target.value)}
+                  className="w-full rounded-[24px] border border-ink/10 bg-paper px-4 py-3 text-sm leading-7 text-ink outline-none transition focus:border-ink/30"
+                />
+                <div className="flex flex-wrap gap-2">
+                  {splitCommaValues(draftFields.techStack).map((item) => (
+                    <span
+                      key={item}
+                      className="rounded-full border border-ink/10 bg-paper px-3 py-1 text-xs text-slate"
+                    >
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-slate">
+                  项目经历
+                </span>
+                <textarea
+                  rows={6}
+                  value={draftFields.projectExperiences}
+                  onChange={(event) =>
+                    updateDraftField("projectExperiences", event.target.value)
+                  }
+                  className="w-full rounded-[24px] border border-ink/10 bg-paper px-4 py-3 text-sm leading-7 text-ink outline-none transition focus:border-ink/30"
+                />
+                <p className="text-xs text-slate">
+                  格式：<code>项目名 | 角色 | 摘要 | React/TypeScript</code>
+                </p>
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-slate">奖项</span>
+                <textarea
+                  rows={5}
+                  value={draftFields.awards}
+                  onChange={(event) => updateDraftField("awards", event.target.value)}
+                  className="w-full rounded-[24px] border border-ink/10 bg-paper px-4 py-3 text-sm leading-7 text-ink outline-none transition focus:border-ink/30"
+                />
+                <p className="text-xs text-slate">
+                  格式：<code>奖项名 | 颁发方 | 2024 | 摘要</code>
+                </p>
+              </label>
+            </div>
+          </section>
 
           <div className="grid gap-6 lg:grid-cols-2">
             <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
               <p className="text-xs uppercase tracking-[0.24em] text-slate">当前限制</p>
-              <div className="mt-5 grid gap-4 grid-cols-2">
+              <div className="mt-5 grid grid-cols-2 gap-4">
                 <div className="rounded-[24px] bg-paper p-5">
                   <p className="text-sm text-slate">每小时剩余</p>
                   <p className="mt-2 font-display text-5xl text-ink">
@@ -366,7 +570,7 @@ export function SearchPage() {
                 </div>
               </div>
               <p className="mt-5 text-sm text-slate">
-                冷却到期：{riskStatusQuery.data?.cooldown_until || "无"}
+                冷却截止：{riskStatusQuery.data?.cooldown_until || "无"}
               </p>
             </section>
 
@@ -377,7 +581,10 @@ export function SearchPage() {
               </p>
               <div className="mt-5 space-y-4">
                 {selectedPlatformCapabilities.map((platform) => (
-                  <div key={platform.platform} className="rounded-[24px] bg-paper p-5 text-sm text-slate">
+                  <div
+                    key={platform.platform}
+                    className="rounded-[24px] bg-paper p-5 text-sm text-slate"
+                  >
                     <p className="font-semibold text-ink">{platform.label}</p>
                     <p className="mt-2">
                       搜索：{platform.search_supported ? "支持" : "不支持"} | 查看：
