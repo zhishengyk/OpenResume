@@ -11,6 +11,12 @@ export type SearchSessionStatus =
   | "failed"
   | "cancelled";
 
+export type SearchAnalysisStatus =
+  | "pending"
+  | "running"
+  | "ready"
+  | "failed";
+
 export type ApplicationAttemptStatus =
   | "queued"
   | "running"
@@ -95,6 +101,7 @@ export interface SearchSession {
   updated_at: string;
   blocked_reason?: string | null;
   summary?: string | null;
+  analysis_status: SearchAnalysisStatus;
   analysis_provider: string;
   analysis_degraded: boolean;
   analysis_notice?: string | null;

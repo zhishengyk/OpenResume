@@ -1,5 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRight, ChevronDown, ChevronUp, ShieldAlert, X, Zap } from "lucide-react";
+import {
+  ArrowUpRight,
+  ChevronDown,
+  ChevronUp,
+  ShieldAlert,
+  X,
+  Zap,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { modeLabel, pillLabel } from "../lib/utils";
@@ -43,8 +50,10 @@ function openExternal(url: string) {
 
 function buildExcerpt(match: JobMatch, maxLength: number = 120) {
   const text = match.requirements_text || match.description_text || "";
-  if (text.length <= maxLength) return text;
-  return text.slice(0, maxLength) + "...";
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength)}...`;
 }
 
 function locationLabel(option: JobLocationOption) {
@@ -52,16 +61,17 @@ function locationLabel(option: JobLocationOption) {
 }
 
 function normalizeLocationOptions(match: JobMatch): JobLocationOption[] {
-  const source = Array.isArray(match.location_options) && match.location_options.length
-    ? match.location_options
-    : [
-        {
-          listing_id: match.listing_id,
-          location_city: match.location_city,
-          location_raw: match.location_raw,
-          apply_url: match.apply_url,
-        },
-      ];
+  const source =
+    Array.isArray(match.location_options) && match.location_options.length
+      ? match.location_options
+      : [
+          {
+            listing_id: match.listing_id,
+            location_city: match.location_city,
+            location_raw: match.location_raw,
+            apply_url: match.apply_url,
+          },
+        ];
 
   const deduped: JobLocationOption[] = [];
   const seen = new Set<string>();
@@ -131,9 +141,9 @@ function LocationPickerDialog({
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-slate">多地点岗位</p>
-            <h3 className="mt-2 font-display text-3xl text-ink">请选择要打开的地点</h3>
+            <h3 className="mt-2 font-display text-3xl text-ink">选择要打开的地点</h3>
             <p className="mt-2 text-sm leading-7 text-slate">
-              该岗位在多个 base 地有职位入口，选择一个地点后继续。
+              该岗位在多个地点都有入口，确认一个地点后继续。
             </p>
           </div>
           <button
@@ -286,38 +296,42 @@ export function MatchCard({ match }: MatchCardProps) {
 
   return (
     <>
-      <article className="rounded-[24px] border border-ink/10 bg-shell/90 shadow-console overflow-hidden">
+      <article className="overflow-hidden rounded-[24px] border border-ink/10 bg-shell/90 shadow-console">
         <div
-          className="p-5 cursor-pointer hover:bg-paper/50 transition-colors"
-          onClick={() => setIsExpanded((v) => !v)}
+          className="cursor-pointer p-5 transition-colors hover:bg-paper/50"
+          onClick={() => setIsExpanded((value) => !value)}
         >
           <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="flex-1 min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <StatusPill>{match.source_site}</StatusPill>
                 {match.analysis_degraded ? <StatusPill>降级</StatusPill> : null}
                 {isMerged ? <StatusPill>{`多地点 ${mergedCount}`}</StatusPill> : null}
               </div>
-              <h3 className="mt-2 font-display text-2xl text-ink truncate">{match.title}</h3>
+              <h3 className="mt-2 truncate font-display text-2xl text-ink">{match.title}</h3>
               <p className="mt-1 text-sm text-slate">
-                {match.source_company} · {locationDisplay} · {match.employment_type || "类型未知"}
+                {match.source_company} 路 {locationDisplay} 路 {match.employment_type || "类型未知"}
               </p>
-              {!isExpanded && (
-                <p className="mt-2 text-sm text-slate/70 line-clamp-2">{excerpt || "暂无职位描述"}</p>
-              )}
+              {!isExpanded ? (
+                <p className="mt-2 line-clamp-2 text-sm text-slate/70">
+                  {excerpt || "暂无职位描述"}
+                </p>
+              ) : null}
             </div>
 
             <div className="flex items-center gap-4">
               <div className="text-center">
                 <p className="text-xs uppercase tracking-[0.15em] text-slate">得分</p>
-                <p className="font-display text-3xl text-ink">{Math.round(match.final_score)}</p>
+                <p className="font-display text-3xl text-ink">
+                  {Math.round(match.final_score)}
+                </p>
               </div>
               <button
                 type="button"
-                className="p-2 rounded-full hover:bg-ink/5 transition-colors"
+                className="rounded-full p-2 transition-colors hover:bg-ink/5"
                 onClick={(event) => {
                   event.stopPropagation();
-                  setIsExpanded((v) => !v);
+                  setIsExpanded((value) => !value);
                 }}
               >
                 {isExpanded ? (
@@ -330,21 +344,25 @@ export function MatchCard({ match }: MatchCardProps) {
           </div>
         </div>
 
-        {isExpanded && (
-          <div className="border-t border-ink/10 p-5 space-y-4">
+        {isExpanded ? (
+          <div className="space-y-4 border-t border-ink/10 p-5">
             {match.analysis_degraded && match.analysis_notice ? (
               <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-ink">
                 {match.analysis_notice}
               </p>
             ) : null}
 
-            {match.department ? <p className="text-sm text-slate">部门：{match.department}</p> : null}
+            {match.department ? (
+              <p className="text-sm text-slate">部门：{match.department}</p>
+            ) : null}
 
             <div className="grid gap-4 lg:grid-cols-2">
               <div className="rounded-xl bg-paper p-4">
-                <p className="text-xs uppercase tracking-[0.15em] text-slate font-medium">匹配摘要</p>
+                <p className="text-xs font-medium uppercase tracking-[0.15em] text-slate">
+                  匹配摘要
+                </p>
                 <p className="mt-2 text-sm leading-6 text-ink">
-                  {match.llm_summary || "这条职位已通过代码清洗和规则排序。"}
+                  {match.llm_summary || "当前显示的是规则排序结果，模型补充完成后会在这里展示。"}
                 </p>
               </div>
 
@@ -354,7 +372,10 @@ export function MatchCard({ match }: MatchCardProps) {
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {match.highlights.length ? (
                       match.highlights.slice(0, 5).map((item) => (
-                        <span key={item} className="rounded-full bg-shell px-2.5 py-1 text-xs text-ink">
+                        <span
+                          key={item}
+                          className="rounded-full bg-shell px-2.5 py-1 text-xs text-ink"
+                        >
                           {item}
                         </span>
                       ))
@@ -368,11 +389,16 @@ export function MatchCard({ match }: MatchCardProps) {
                   <p className="text-xs uppercase tracking-[0.15em] text-slate">风险提示</p>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {[...match.missing_keywords, ...match.risk_flags].length ? (
-                      [...match.missing_keywords, ...match.risk_flags].slice(0, 4).map((item) => (
-                        <span key={item} className="rounded-full bg-shell px-2.5 py-1 text-xs text-ink">
-                          {item}
-                        </span>
-                      ))
+                      [...match.missing_keywords, ...match.risk_flags]
+                        .slice(0, 4)
+                        .map((item) => (
+                          <span
+                            key={item}
+                            className="rounded-full bg-shell px-2.5 py-1 text-xs text-ink"
+                          >
+                            {item}
+                          </span>
+                        ))
                     ) : (
                       <span className="text-xs text-slate">暂无</span>
                     )}
@@ -382,8 +408,10 @@ export function MatchCard({ match }: MatchCardProps) {
             </div>
 
             <div className="rounded-xl border border-ink/10 bg-paper p-4">
-              <p className="text-xs uppercase tracking-[0.15em] text-slate font-medium">职位描述</p>
-              <pre className="mt-2 text-sm leading-6 text-slate whitespace-pre-wrap max-h-48 overflow-y-auto">
+              <p className="text-xs font-medium uppercase tracking-[0.15em] text-slate">
+                职位描述
+              </p>
+              <pre className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-slate">
                 {match.description_text || match.requirements_text || "暂无描述"}
               </pre>
             </div>
@@ -396,7 +424,7 @@ export function MatchCard({ match }: MatchCardProps) {
                 disabled={reviewMutation.isPending || !canOpenLink}
               >
                 <ArrowUpRight size={14} />
-                {reviewMutation.isPending ? "打开中..." : "打开职位页面"}
+                {reviewMutation.isPending ? "正在打开..." : "打开职位页面"}
               </button>
               <button
                 type="button"
@@ -425,11 +453,11 @@ export function MatchCard({ match }: MatchCardProps) {
             ) : null}
 
             <p className="text-xs text-slate/70">
-              平台：{pillLabel(match.platform)} · 模式：
+              平台：{pillLabel(match.platform)} 路 模式：
               {modeLabel(match.apply_supported ? "guided_apply" : "review_in_browser")}
             </p>
           </div>
-        )}
+        ) : null}
       </article>
 
       <LocationPickerDialog

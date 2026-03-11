@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ChevronLeft, ChevronRight, RefreshCw, ShieldCheck } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  RefreshCw,
+  ShieldCheck,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { MatchCard } from "../components/MatchCard";
@@ -89,6 +95,12 @@ export function ResultsPage() {
 
   const isBlocked = sessionQuery.data?.status === "blocked";
   const isRunning = sessionQuery.data?.status === "running";
+  const analysisStatus = sessionQuery.data?.analysis_status;
+  const analysisInProgress =
+    sessionQuery.data?.status === "ready" &&
+    (analysisStatus === "pending" || analysisStatus === "running");
+  const analysisFailed = sessionQuery.data?.status === "ready" && analysisStatus === "failed";
+  const analysisReady = sessionQuery.data?.status === "ready" && analysisStatus === "ready";
 
   const paginatedMatches = useMemo(() => {
     const matches = matchesQuery.data || [];
@@ -100,6 +112,25 @@ export function ResultsPage() {
     const total = matchesQuery.data?.length || 0;
     return Math.ceil(total / PAGE_SIZE);
   }, [matchesQuery.data]);
+
+  const analysisProviderLabel = useMemo(() => {
+    if (analysisInProgress) {
+      return "处理中";
+    }
+    if (analysisFailed) {
+      return "失败";
+    }
+    if (analysisReady && sessionQuery.data) {
+      return pillLabel(sessionQuery.data.analysis_provider);
+    }
+    return "--";
+  }, [analysisFailed, analysisInProgress, analysisReady, sessionQuery.data]);
+
+  const analysisHint = analysisInProgress
+    ? "规则排序结果已可查看，模型分析完成后会自动刷新并重排。"
+    : analysisFailed
+      ? "模型分析未完成，当前仍可查看规则排序结果。"
+      : "模型分析完成后，这里会显示实际生效的分析提供方。";
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -113,7 +144,7 @@ export function ResultsPage() {
           <div>
             <p className="text-xs uppercase tracking-[0.24em] text-slate">搜索任务</p>
             <h1 className="mt-3 font-display text-5xl text-ink">
-              先清洗，再排序，最后再打开官网职位页面。
+              先清洗，再排序，最后再补模型分析。
             </h1>
           </div>
           {sessionQuery.data ? <StatusPill>{sessionQuery.data.status}</StatusPill> : null}
@@ -125,10 +156,19 @@ export function ResultsPage() {
         ) : null}
       </section>
 
-      {sessionQuery.data?.analysis_degraded && sessionQuery.data.analysis_notice ? (
+      {analysisInProgress ? (
+        <section className="rounded-[32px] border border-signal/30 bg-signal/10 p-6 shadow-console">
+          <p className="text-sm leading-7 text-ink">
+            模型分析正在后台进行中。当前列表先按规则分展示，分析完成后会自动刷新并按最终分重排。
+          </p>
+        </section>
+      ) : null}
+
+      {(analysisFailed ||
+        (analysisReady && sessionQuery.data?.analysis_degraded && sessionQuery.data.analysis_notice)) ? (
         <section className="rounded-[32px] border border-amber-500/30 bg-amber-500/10 p-6 shadow-console">
           <p className="text-sm leading-7 text-ink">
-            {sessionQuery.data.analysis_notice}
+            {sessionQuery.data?.analysis_notice || "模型分析未完成，当前展示规则排序结果。"}
           </p>
         </section>
       ) : null}
@@ -142,10 +182,10 @@ export function ResultsPage() {
                 需要验证
               </p>
               <h2 className="mt-3 font-display text-3xl text-ink">
-                请先在弹窗里完成验证，然后继续这次搜索。
+                先完成验证，再继续这次搜索。
               </h2>
               <p className="mt-3 text-sm leading-7 text-slate">
-                {sessionQuery.data?.blocked_reason || "平台要求人工验证后才能继续。"}
+                {sessionQuery.data?.blocked_reason || "平台要求先完成人工验证。"}
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -176,7 +216,7 @@ export function ResultsPage() {
         <MetricCard
           label="可见职位"
           value={String(matchesQuery.data?.length ?? 0)}
-          hint="只有通过代码清洗的职位才会显示在这里。"
+          hint="这里只展示通过抓取和代码清洗后保留下来的职位。"
         />
         <MetricCard
           label="已选平台"
@@ -185,12 +225,12 @@ export function ResultsPage() {
               ?.map((platform) => pillLabel(platform))
               .join(", ") || "--"
           }
-          hint="搜索任务会记录本次选择的所有平台。"
+          hint="搜索任务会记录本次选中的全部平台。"
         />
         <MetricCard
-          label="分析提供方"
-          value={sessionQuery.data ? pillLabel(sessionQuery.data.analysis_provider) : "--"}
-          hint="如果大模型排序降级，这里会显示实际使用的提供方。"
+          label="分析状态"
+          value={analysisProviderLabel}
+          hint={analysisHint}
         />
       </section>
 
@@ -261,8 +301,8 @@ export function ResultsPage() {
           ) : (
             <div className="rounded-[32px] border border-ink/10 bg-shell/90 p-8 text-sm leading-7 text-slate shadow-console">
               {isRunning
-                ? "职位抓取和清洗完成后会显示在这里。"
-                : "当前搜索任务还没有可显示的职位。"}
+                ? "职位抓取和规则排序完成后会显示在这里。"
+                : "当前搜索任务还没有可展示的职位。"}
             </div>
           )}
         </div>

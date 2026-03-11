@@ -59,6 +59,7 @@ class SearchSession(SQLModel, table=True):
     force_refresh: bool = False
     blocked_reason: str | None = None
     summary: str | None = None
+    analysis_status: str = "ready"
     analysis_provider: str = "heuristic"
     analysis_degraded: bool = False
     analysis_notice: str | None = None

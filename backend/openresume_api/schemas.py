@@ -97,6 +97,28 @@ class JobLocationOptionResponse(BaseModel):
     apply_url: str
 
 
+class SearchSessionResponse(BaseModel):
+    id: str
+    requested_platforms: list[str]
+    mode: str
+    status: str
+    job_targets: list[str]
+    cities: list[str]
+    salary_floor: int
+    must_have_keywords: list[str]
+    source_variants: list[str]
+    source_companies: list[str]
+    force_refresh: bool
+    blocked_reason: str | None
+    summary: str | None
+    analysis_status: str
+    analysis_provider: str
+    analysis_degraded: bool
+    analysis_notice: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class JobMatchResponse(BaseModel):
     id: str
     listing_id: str

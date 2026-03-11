@@ -5,13 +5,17 @@ function eventTypeLabel(type: string) {
     search_started: "任务创建",
     search_restarted: "重新搜索",
     fetching_jobs: "抓取职位",
+    fetch_force_refresh: "实时抓取",
+    fetch_cache_hit: "缓存命中",
     code_cleaned: "代码清洗",
     rule_ranked: "规则排序",
+    llm_started: "模型开始",
     llm_enriched: "模型补充",
+    llm_failed: "模型失败",
     verification_opened: "打开验证",
     blocked: "平台阻塞",
     failed: "任务失败",
-    ready: "任务完成",
+    ready: "结果可用",
   };
 
   return mapping[type] || type;
@@ -31,7 +35,7 @@ export function Timeline({ events }: TimelineProps) {
       <div className="mt-5 space-y-4">
         {events.length === 0 ? (
           <p className="text-sm text-slate">
-            暂无事件流。任务启动后，搜索流水线的进度会实时显示在这里。
+            暂无事件流。任务启动后，搜索流水线进度会实时显示在这里。
           </p>
         ) : null}
         {events.map((event) => (
