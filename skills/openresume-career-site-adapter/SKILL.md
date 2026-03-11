@@ -84,6 +84,31 @@ When adding a new company source, define all three variants in `manifest.py` if 
 - Kuaishou campus can legitimately return very low counts (for example fulltime=2, intern=1 at the time of validation); do not treat this as parser failure unless request parity is broken.
 - JD campus detail endpoint uses `publishId` in `/api/wx/position/detail/{id}`. Using `reqId` may return structurally successful but empty bodies.
 - Ant Group search currently returns empty when `pageSize` is too large in some flows; cap to small page size (for example `<=10`) before judging the source as empty.
+- Xiaohongshu public jobs use:
+  - `POST https://job.xiaohongshu.com/websiterecruit/position/pageQueryPosition`
+  - `GET https://job.xiaohongshu.com/websiterecruit/position/queryPositionDetail?positionId=...`
+  - `recruitType` values `social`, `campus`, and `intern`
+  - The campus list can still expose internship titles, so campus vs internship may need title-based splitting when the list payload does not expose a cleaner flag.
+- Bilibili requires a CSRF bootstrap before list calls:
+  - `GET /api/auth/v1/csrf/token`
+  - headers must include `X-AppKey`, `X-UserType`, and variant-specific `X-Channel`
+  - list calls then need `X-CSRF`
+  - campus fulltime and internship both use `/api/campus/position/positionList` but different `recruitType` values.
+- Dewu is a dual-domain Feishu ATSX integration:
+  - social uses `https://poizon.jobs.feishu.cn/index`
+  - campus/internship uses `https://campus.dewu.com/`
+  - both rely on `/api/v1/csrf/token`, `/api/v1/search/job/posts`, and `/api/v1/job/posts/{id}` with variant-specific `website-path`.
+- Freshippo is another Alibaba-shell site. Reuse the shared Alibaba provider and swap only:
+  - `base_url=https://hire.freshippo.com`
+  - social channel `hema_group_official_site`
+  - campus channel `hema_campus_group_official_site`
+- Mihoyo public mobile jobs do not use the login-only `get/id_list` flow. The public seam is:
+  - `POST https://ats.openout.mihoyo.com/ats-portal/v1/job/list`
+  - `POST https://ats.openout.mihoyo.com/ats-portal/v1/job/info`
+  - social routes are hash-based `#/position/{id}`
+  - campus routes are hash-based `#/campus/position/{id}`
+  - campus vs internship can be split from `jobNatureId` (`1` fulltime, `3` internship, `4` shared).
+- In git worktrees with editable installs, prefer running `python -m pytest` from `backend/` so imports resolve to the active worktree instead of another checkout.
 - Live smoke may need a repo-local fallback. If the standalone smoke script drifts behind the repo and imports removed modules, call `OfficialAdapter.search_jobs()` directly with `source_companies` and `source_variants` to validate real drafts.
 
 ## Reference
