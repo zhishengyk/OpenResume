@@ -6,8 +6,10 @@ import hashlib
 import json
 from time import perf_counter
 from typing import Any
+from uuid import uuid4
 
 from fastapi import HTTPException
+from sqlalchemy import insert as sql_insert
 from sqlmodel import Session, delete, select
 
 from .. import db as db_module
@@ -413,63 +415,71 @@ class SearchService:
                 db.commit()
 
                 persist_started_at = perf_counter()
-                stored_jobs: list[JobListing] = []
-                stored_matches: list[JobMatch] = []
+                job_rows: list[dict[str, Any]] = []
+                match_rows: list[dict[str, Any]] = []
                 default_platform = payload.platforms[0] if payload.platforms else "official"
+                now = datetime.utcnow()
 
                 for rule_match in rule_matches:
                     draft = rule_match.draft
-                    job = JobListing(
-                        session_id=session_id,
-                        platform=str(draft.raw_payload.get("platform") or default_platform),
-                        source_company=draft.source_company,
-                        source_site=draft.source_site,
-                        job_id=draft.job_id,
-                        title=draft.title,
-                        department=draft.department,
-                        employment_type=draft.employment_type,
-                        location_raw=draft.location_raw,
-                        location_city=draft.location_city,
-                        location_country=draft.location_country,
-                        remote_type=draft.remote_type,
-                        description_html=draft.description_html,
-                        description_text=draft.description_text,
-                        requirements_text=draft.requirements_text,
-                        skills_extracted=draft.skills_extracted,
-                        posted_at=draft.posted_at,
-                        apply_url=draft.apply_url,
-                        salary_raw=draft.salary_raw,
-                        salary_min=draft.salary_min,
-                        salary_max=draft.salary_max,
-                        lang=draft.lang,
-                        crawl_time=draft.crawl_time or datetime.utcnow(),
-                        raw_payload=draft.raw_payload,
+                    listing_id = str(uuid4())
+                    job_rows.append(
+                        {
+                            "id": listing_id,
+                            "session_id": session_id,
+                            "platform": str(draft.raw_payload.get("platform") or default_platform),
+                            "source_company": draft.source_company,
+                            "source_site": draft.source_site,
+                            "job_id": draft.job_id,
+                            "title": draft.title,
+                            "department": draft.department,
+                            "employment_type": draft.employment_type,
+                            "location_raw": draft.location_raw,
+                            "location_city": draft.location_city,
+                            "location_country": draft.location_country,
+                            "remote_type": draft.remote_type,
+                            "description_html": draft.description_html,
+                            "description_text": draft.description_text,
+                            "requirements_text": draft.requirements_text,
+                            "skills_extracted": draft.skills_extracted,
+                            "posted_at": draft.posted_at,
+                            "apply_url": draft.apply_url,
+                            "salary_raw": draft.salary_raw,
+                            "salary_min": draft.salary_min,
+                            "salary_max": draft.salary_max,
+                            "lang": draft.lang,
+                            "crawl_time": draft.crawl_time or now,
+                            "raw_payload": draft.raw_payload,
+                            "created_at": now,
+                        }
                     )
-                    stored_jobs.append(job)
-                    stored_matches.append(
-                        JobMatch(
-                            session_id=session_id,
-                            job_id=job.id,
-                            rule_score=rule_match.rule_score,
-                            final_score=rule_match.rule_score,
-                            highlights=rule_match.highlights,
-                            missing_keywords=rule_match.missing_keywords,
-                            risk_flags=rule_match.risk_flags,
-                        )
+                    match_rows.append(
+                        {
+                            "id": str(uuid4()),
+                            "session_id": session_id,
+                            "job_id": listing_id,
+                            "rule_score": rule_match.rule_score,
+                            "final_score": rule_match.rule_score,
+                            "highlights": rule_match.highlights,
+                            "missing_keywords": rule_match.missing_keywords,
+                            "risk_flags": rule_match.risk_flags,
+                            "created_at": now,
+                            "updated_at": now,
+                        }
                     )
 
-                if stored_jobs:
-                    db.add_all(stored_jobs)
-                if stored_matches:
-                    db.add_all(stored_matches)
+                if job_rows:
+                    db.execute(sql_insert(JobListing), job_rows)
+                if match_rows:
+                    db.execute(sql_insert(JobMatch), match_rows)
                 db.commit()
                 persist_ms = int((perf_counter() - persist_started_at) * 1000)
 
                 event_bus.publish(
                     session_id,
                     "rule_ranked",
-                    f"Rule ranking kept {len(stored_jobs)} jobs.",
-                    {"matches": len(stored_jobs)},
+                    f"Rule ranking kept {len(job_rows)} jobs.",
+                    {"matches": len(job_rows)},
                 )
 
                 time_to_ready_ms = int((perf_counter() - pipeline_started_at) * 1000)

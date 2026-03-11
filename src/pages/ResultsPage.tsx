@@ -15,7 +15,7 @@ import { Timeline } from "../components/Timeline";
 import { useEventStream } from "../hooks/useEventStream";
 import { api } from "../lib/api";
 import { pillLabel } from "../lib/utils";
-import type { SearchEvent } from "../types";
+import type { SearchEvent, SearchSession } from "../types";
 
 const PAGE_SIZE = 20;
 
@@ -29,6 +29,28 @@ async function openVerificationPopup(url: string, title: string) {
     return;
   }
   window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function sessionRefetchInterval(
+  sessionId: string | undefined,
+  session: SearchSession | undefined,
+) {
+  if (!sessionId) {
+    return false;
+  }
+  if (!session) {
+    return 2000;
+  }
+  if (session.status === "running") {
+    return 2000;
+  }
+  if (
+    session.status === "ready" &&
+    (session.analysis_status === "pending" || session.analysis_status === "running")
+  ) {
+    return 2000;
+  }
+  return false;
 }
 
 export function ResultsPage() {
@@ -47,14 +69,17 @@ export function ResultsPage() {
     queryKey: ["search-session", sessionId],
     queryFn: () => api.getSearchSession(sessionId!),
     enabled: Boolean(sessionId),
-    refetchInterval: sessionId ? 2000 : false,
+    refetchInterval: (query) =>
+      sessionRefetchInterval(sessionId, query.state.data as SearchSession | undefined),
   });
 
   const matchesQuery = useQuery({
     queryKey: ["search-matches", sessionId],
     queryFn: () => api.getSearchMatches(sessionId!),
-    enabled: Boolean(sessionId),
-    refetchInterval: sessionId ? 2500 : false,
+    enabled: Boolean(
+      sessionId && sessionQuery.data?.status && sessionQuery.data.status !== "running",
+    ),
+    refetchInterval: false,
   });
 
   const openVerificationMutation = useMutation({
@@ -92,6 +117,19 @@ export function ResultsPage() {
     queryClient.invalidateQueries({ queryKey: ["search-session", sessionId] });
     queryClient.invalidateQueries({ queryKey: ["search-matches", sessionId] });
   });
+
+  useEffect(() => {
+    if (!sessionId || sessionQuery.data?.status !== "ready") {
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ["search-matches", sessionId] });
+  }, [
+    queryClient,
+    sessionId,
+    sessionQuery.data?.status,
+    sessionQuery.data?.analysis_status,
+    sessionQuery.data?.updated_at,
+  ]);
 
   const isBlocked = sessionQuery.data?.status === "blocked";
   const isRunning = sessionQuery.data?.status === "running";
@@ -242,7 +280,7 @@ export function ResultsPage() {
               {paginatedMatches.map((match) => (
                 <MatchCard key={match.id} match={match} />
               ))}
-              {totalPages > 1 && (
+              {totalPages > 1 ? (
                 <div className="flex items-center justify-center gap-2 pt-4">
                   <button
                     type="button"
@@ -291,12 +329,12 @@ export function ResultsPage() {
                     <ChevronRight size={16} />
                   </button>
                 </div>
-              )}
-              {totalPages > 1 && (
+              ) : null}
+              {totalPages > 1 ? (
                 <p className="text-center text-sm text-slate">
                   第 {currentPage} / {totalPages} 页，共 {matchesQuery.data?.length || 0} 条职位
                 </p>
-              )}
+              ) : null}
             </>
           ) : (
             <div className="rounded-[32px] border border-ink/10 bg-shell/90 p-8 text-sm leading-7 text-slate shadow-console">
