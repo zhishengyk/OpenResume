@@ -34,6 +34,24 @@
 - Keep directory filtering on. The right fix is to land on `position-detail?positionId=...`, not to admit `position-list` or older category pages as jobs.
 - Useful payload fields include title, description, position id, and city or location text. Use payload detail extraction when the detail HTML is still thin.
 
+## Aliyun careers shell (careers.aliyun.com)
+
+- Fingerprints: `careers.aliyun.com`, `window.__sysconfig.__token__`, `circle.portalOfficialChannel`, `circle.portalCampusChannel`, and `aliyun-new-careers-portal` JS bundles.
+- API family matches Taotian-style endpoints but runs on `careers.aliyun.com`:
+  - `POST /searchCondition/list?_csrf=...`
+  - `POST /position/search?_csrf=...`
+  - `POST /position/detail?_csrf=...`
+- Channel mapping:
+  - experienced: `aliyun_group_official_site`
+  - campus: `aliyun_campus_group_official_site` + `categoryType=freshman`
+  - internship: `aliyun_campus_group_official_site` + `categoryType=internship`
+- Keep fallback behavior:
+  - if keyword search returns empty, run an empty-keyword query once before declaring zero.
+  - allow experienced/internship to return zero in off-season without treating it as an integration failure.
+- Detail URLs should stay in-domain (`careers.aliyun.com`) and fallback to:
+  - `/off-campus/position-detail?positionId=...`
+  - `/campus/position-detail?positionId=...&campusType=...`
+
 ## Tencent dual official sites (careers + join.qq)
 
 - Fingerprints:
@@ -131,6 +149,7 @@
 |--------|-------------|--------|------------|
 | ByteDance | `/experienced/position` | `/campus/position` | 需要新增 |
 | Taobao/Taotian | 社招入口 | `campusType=freshman` | `campusType=internship` |
+| Aliyun careers | `channel=aliyun_group_official_site` | `channel=aliyun_campus_group_official_site, categoryType=freshman` | `channel=aliyun_campus_group_official_site, categoryType=internship` |
 | PDD | 社招入口 | `/campus/grad` | `/campus/intern` |
 
 ## General heuristics

@@ -59,6 +59,22 @@ Recommended pattern:
 2. Merge `join.qq.com` into `campus` and `internship`.
 3. Deduplicate by stable job id (`PostId`/`postId`) and normalized key.
 
+## Aliyun Mapping Template
+
+Use this mapping when adapting `careers.aliyun.com`:
+
+| Variant | Channel | categoryType |
+|---------|---------|--------------|
+| `experienced` | `aliyun_group_official_site` | none |
+| `campus` | `aliyun_campus_group_official_site` | `freshman` |
+| `internship` | `aliyun_campus_group_official_site` | `internship` |
+
+Recommended pattern:
+
+1. Extract `__token__` from HTML and send both `_csrf` query + `x-csrf-token` header.
+2. Run `/searchCondition/list` warmup before `/position/search`.
+3. Keep one empty-keyword fallback pass when keyword queries return zero.
+
 ## Validation Checklist
 
 1. Add provider unit tests for variant mapping, pagination stop, dedupe, encoding fallback.

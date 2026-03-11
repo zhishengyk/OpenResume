@@ -22,6 +22,10 @@ from openresume_api.career_collectors.companies.taobao import (
     TaobaoCollector,
     taobao_collector,
 )
+from openresume_api.career_collectors.companies.aliyun import (
+    AliyunCollector,
+    aliyun_collector,
+)
 from openresume_api.career_collectors.manifest import filter_sources, load_sources
 from openresume_api.career_collectors.normalization import (
     build_description_html,
@@ -94,6 +98,9 @@ def test_manifest_registers_bytedance_and_tencent_sources():
         "taobao-experienced": "taobao",
         "taobao-campus": "taobao",
         "taobao-internship": "taobao",
+        "aliyun-experienced": "aliyun",
+        "aliyun-campus": "aliyun",
+        "aliyun-internship": "aliyun",
     }
     assert expected.keys() <= source_by_key.keys()
     for key, collector_key in expected.items():
@@ -393,10 +400,10 @@ class TestFilterSources:
     def test_filters_by_variant(self):
         sources = load_sources()
         filtered = filter_sources(sources, variants=["experienced"])
-        assert len(filtered) >= 3
+        assert len(filtered) >= 4
         assert all(source.variant == "experienced" for source in filtered)
         collector_keys = {source.collector_key for source in filtered}
-        assert {"bytedance", "tencent", "taobao"} <= collector_keys
+        assert {"bytedance", "tencent", "taobao", "aliyun"} <= collector_keys
 
     def test_filters_by_company(self):
         sources = load_sources()
@@ -428,6 +435,12 @@ class TestFilterSources:
         filtered = filter_sources(sources, companies=["淘宝"])
         assert len(filtered) == 3
         assert all(source.collector_key == "taobao" for source in filtered)
+
+    def test_filters_by_aliyun_company(self):
+        sources = load_sources()
+        filtered = filter_sources(sources, companies=["阿里云"])
+        assert len(filtered) == 3
+        assert all(source.collector_key == "aliyun" for source in filtered)
 
     def test_returns_all_when_no_filters(self):
         sources = load_sources()
@@ -652,4 +665,76 @@ class TestTaobaoCollector:
         assert result.employment_type == "实习"
         assert result.source_company == "淘宝"
         assert result.source_site == "talent.taotian.com"
+        assert result.posted_at is not None
+
+class TestAliyunCollector:
+    def test_collector_key_is_aliyun(self):
+        assert aliyun_collector.collector_key == "aliyun"
+
+    def test_to_record_returns_none_for_missing_job_id(self):
+        collector = AliyunCollector()
+        source = make_source(
+            key="test",
+            collector_key="aliyun",
+            variant="experienced",
+            company_name="Aliyun",
+            entry_url="https://careers.aliyun.com/off-campus/position-list?lang=zh",
+            source_site="careers.aliyun.com",
+        )
+        provider = MagicMock()
+        provider.detail_url.return_value = (
+            "https://careers.aliyun.com/off-campus/position-detail?positionId=1"
+        )
+        result = collector._to_record(
+            source,
+            {"id": "", "name": "Engineer"},
+            provider=provider,
+            crawl_time=datetime(2026, 3, 10),
+        )
+        assert result is None
+
+    def test_to_record_maps_fields(self):
+        collector = AliyunCollector()
+        source = make_source(
+            key="test",
+            collector_key="aliyun",
+            variant="campus",
+            company_name="Aliyun",
+            entry_url=(
+                "https://careers.aliyun.com/campus/position-list"
+                "?campusType=freshman&lang=zh"
+            ),
+            source_site="careers.aliyun.com",
+        )
+        provider = MagicMock()
+        provider.detail_url.return_value = (
+            "https://careers.aliyun.com/campus/position-detail"
+            "?positionId=123&campusType=freshman"
+        )
+        result = collector._to_record(
+            source,
+            {
+                "id": "123",
+                "name": "Frontend Engineer",
+                "description": "Build products",
+                "requirement": "React TypeScript",
+                "workLocations": ["Hangzhou", "Beijing"],
+                "categoryName": "Engineering",
+                "publishTime": 1704067200000,
+                "positionUrl": "/campus/position-detail?positionId=123&campusType=freshman",
+            },
+            provider=provider,
+            crawl_time=datetime(2026, 3, 10),
+        )
+        assert result is not None
+        assert result.job_id == "123"
+        assert result.title == "Frontend Engineer"
+        assert result.location_raw == "Hangzhou / Beijing"
+        assert result.location_city == "杭州"
+        assert result.department == "Engineering"
+        assert result.description_text == "Build products"
+        assert result.requirements_text == "React TypeScript"
+        assert result.employment_type == "校招"
+        assert result.source_company == "阿里云"
+        assert result.source_site == "careers.aliyun.com"
         assert result.posted_at is not None

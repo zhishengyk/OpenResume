@@ -85,6 +85,33 @@ SOURCES: tuple[CareerSiteSource, ...] = (
         variant="internship",
         label="\u6dd8\u5b9d\u5b9e\u4e60",
     ),
+    CareerSiteSource(
+        key="aliyun-experienced",
+        company_name="\u963f\u91cc\u4e91",
+        entry_url="https://careers.aliyun.com/off-campus/position-list?lang=zh",
+        source_site="careers.aliyun.com",
+        collector_key="aliyun",
+        variant="experienced",
+        label="\u963f\u91cc\u4e91\u793e\u62db",
+    ),
+    CareerSiteSource(
+        key="aliyun-campus",
+        company_name="\u963f\u91cc\u4e91",
+        entry_url="https://careers.aliyun.com/campus/position-list?campusType=freshman&lang=zh",
+        source_site="careers.aliyun.com",
+        collector_key="aliyun",
+        variant="campus",
+        label="\u963f\u91cc\u4e91\u6821\u62db",
+    ),
+    CareerSiteSource(
+        key="aliyun-internship",
+        company_name="\u963f\u91cc\u4e91",
+        entry_url="https://careers.aliyun.com/campus/position-list?campusType=internship&lang=zh",
+        source_site="careers.aliyun.com",
+        collector_key="aliyun",
+        variant="internship",
+        label="\u963f\u91cc\u4e91\u5b9e\u4e60",
+    ),
 )
 
 
