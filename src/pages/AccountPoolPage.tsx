@@ -34,6 +34,19 @@ function loginTone(isLoggedIn: boolean) {
     : "border-ember/20 bg-ember/10 text-ember";
 }
 
+function cacheStatusLabel(status?: string | null) {
+  switch ((status || "").trim()) {
+    case "ready":
+      return "已缓存";
+    case "missing":
+      return "未检测到";
+    case "error":
+      return "缓存异常";
+    default:
+      return "未检测";
+  }
+}
+
 export function AccountPoolPage() {
   const queryClient = useQueryClient();
   const [expandedCompanyKey, setExpandedCompanyKey] = useState<string | null>(null);
@@ -95,6 +108,10 @@ export function AccountPoolPage() {
 
   const loginMutation = useMutation({
     mutationFn: (accountId: string) => api.loginOfficialAccount(accountId),
+    onSuccess: refreshPoolQueries,
+  });
+  const sessionTestMutation = useMutation({
+    mutationFn: (accountId: string) => api.testOfficialAccountSession(accountId),
     onSuccess: refreshPoolQueries,
   });
 
@@ -164,6 +181,7 @@ export function AccountPoolPage() {
     (createAccountMutation.error instanceof Error && createAccountMutation.error.message) ||
     (deleteAccountMutation.error instanceof Error && deleteAccountMutation.error.message) ||
     (loginMutation.error instanceof Error && loginMutation.error.message) ||
+    (sessionTestMutation.error instanceof Error && sessionTestMutation.error.message) ||
     (uploadAssetMutation.error instanceof Error && uploadAssetMutation.error.message) ||
     (deleteAssetMutation.error instanceof Error && deleteAssetMutation.error.message) ||
     (updateBindingMutation.error instanceof Error && updateBindingMutation.error.message) ||
@@ -238,6 +256,9 @@ export function AccountPoolPage() {
             createAccountMutation.isPending &&
             createAccountMutation.variables?.company_key === site.company_key;
           const isLoginPending = loginMutation.isPending && loginMutation.variables === defaultAccount?.id;
+          const isSessionTestPending =
+            sessionTestMutation.isPending &&
+            sessionTestMutation.variables === defaultAccount?.id;
 
           return (
             <article
@@ -268,7 +289,7 @@ export function AccountPoolPage() {
                     <button
                       type="button"
                       className={secondaryActionButtonClass}
-                      disabled={isProvisioningDefaultAccount || isLoginPending}
+                      disabled={isProvisioningDefaultAccount || isLoginPending || isSessionTestPending}
                       onClick={() => {
                         void (async () => {
                           const account = await ensureDefaultAccount(site);
@@ -282,6 +303,25 @@ export function AccountPoolPage() {
                         <LogIn size={15} />
                       )}
                       登录
+                    </button>
+
+                    <button
+                      type="button"
+                      className={secondaryActionButtonClass}
+                      disabled={isProvisioningDefaultAccount || isLoginPending || isSessionTestPending}
+                      onClick={() => {
+                        void (async () => {
+                          const account = await ensureDefaultAccount(site);
+                          sessionTestMutation.mutate(account.id);
+                        })();
+                      }}
+                    >
+                      {isSessionTestPending ? (
+                        <LoaderCircle size={15} className="animate-spin" />
+                      ) : (
+                        <Vault size={15} />
+                      )}
+                      检测缓存
                     </button>
 
                     <button
@@ -301,7 +341,7 @@ export function AccountPoolPage() {
 
                 {expanded ? (
                 <div className="mt-4 grid gap-4">
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                     <div
                       className={cn(
                         "rounded-[22px] border px-4 py-3",
@@ -327,11 +367,25 @@ export function AccountPoolPage() {
                         {formatDate(defaultAccount?.last_tested_at)}
                       </p>
                     </div>
+
+                    <div className="rounded-[22px] border border-ink/10 bg-paper px-4 py-3">
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-slate">缓存状态</p>
+                      <p className="mt-2 text-sm font-semibold text-ink">
+                        {cacheStatusLabel(defaultAccount?.session_cache?.status)}
+                      </p>
+                    </div>
                   </div>
 
                   <p className="text-[11px] leading-5 text-slate">
                     点击登录后会打开官网页面。请在官网里手动完成登录，并关闭该窗口后再回到这里查看状态。
                   </p>
+
+                  <div className="rounded-[20px] border border-ink/10 bg-paper px-4 py-3 text-xs text-slate">
+                    <p className="uppercase tracking-[0.18em]">缓存路径</p>
+                    <p className="mt-2 break-all text-ink">
+                      {defaultAccount?.session_cache?.storage_state_path || "尚未创建会话缓存"}
+                    </p>
+                  </div>
 
                   <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
                     <section className="rounded-[24px] border border-ink/10 bg-paper p-4">
@@ -349,43 +403,83 @@ export function AccountPoolPage() {
 
                     <div className="mt-4 space-y-3">
                       {accounts.length ? (
-                        accounts.map((account) => (
-                          <div
-                            key={account.id}
-                            className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-ink/10 bg-shell px-4 py-3"
-                          >
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="truncate text-sm font-semibold text-ink">
-                                  {account.display_name}
-                                </p>
-                                <span
-                                  className={cn(
-                                    "rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.18em]",
-                                    loginTone(account.is_logged_in),
-                                  )}
-                                >
-                                  {account.is_logged_in ? "已登录" : "未登录"}
-                                </span>
-                              </div>
-                              <p className="mt-1 text-xs text-slate">
-                                {account.last_test_message || "暂无测试记录"}
-                              </p>
-                            </div>
+                        accounts.map((account) => {
+                          const accountLoginPending =
+                            loginMutation.isPending && loginMutation.variables === account.id;
+                          const accountSessionTestPending =
+                            sessionTestMutation.isPending &&
+                            sessionTestMutation.variables === account.id;
 
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                className={compactActionButtonClass}
-                                disabled={deleteAccountMutation.isPending}
-                                onClick={() => deleteAccountMutation.mutate(account.id)}
-                              >
-                                <Trash2 size={13} />
-                                删除
-                              </button>
+                          return (
+                            <div
+                              key={account.id}
+                              className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-ink/10 bg-shell px-4 py-3"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="truncate text-sm font-semibold text-ink">
+                                    {account.display_name}
+                                  </p>
+                                  <span
+                                    className={cn(
+                                      "rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.18em]",
+                                      loginTone(account.is_logged_in),
+                                    )}
+                                  >
+                                    {account.is_logged_in ? "已登录" : "未登录"}
+                                  </span>
+                                  <span className="rounded-full border border-ink/10 bg-paper px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-slate">
+                                    {cacheStatusLabel(account.session_cache?.status)}
+                                  </span>
+                                </div>
+                                <p className="mt-1 text-xs text-slate">
+                                  {account.last_test_message || "暂无测试记录"}
+                                </p>
+                                <p className="mt-1 break-all text-[11px] text-slate">
+                                  {account.session_cache?.storage_state_path || ""}
+                                </p>
+                              </div>
+
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  className={compactActionButtonClass}
+                                  disabled={accountLoginPending || accountSessionTestPending}
+                                  onClick={() => loginMutation.mutate(account.id)}
+                                >
+                                  {accountLoginPending ? (
+                                    <LoaderCircle size={13} className="animate-spin" />
+                                  ) : (
+                                    <LogIn size={13} />
+                                  )}
+                                  登录
+                                </button>
+                                <button
+                                  type="button"
+                                  className={compactActionButtonClass}
+                                  disabled={accountLoginPending || accountSessionTestPending}
+                                  onClick={() => sessionTestMutation.mutate(account.id)}
+                                >
+                                  {accountSessionTestPending ? (
+                                    <LoaderCircle size={13} className="animate-spin" />
+                                  ) : (
+                                    <Vault size={13} />
+                                  )}
+                                  检测
+                                </button>
+                                <button
+                                  type="button"
+                                  className={compactActionButtonClass}
+                                  disabled={deleteAccountMutation.isPending}
+                                  onClick={() => deleteAccountMutation.mutate(account.id)}
+                                >
+                                  <Trash2 size={13} />
+                                  删除
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        ))
+                          );
+                        })
                       ) : (
                         <div className="rounded-[20px] border border-dashed border-ink/15 bg-shell px-4 py-4 text-sm text-slate">
                           还没有给这家公司添加账号。
