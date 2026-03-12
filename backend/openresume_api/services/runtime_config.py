@@ -7,6 +7,7 @@ import time
 import httpx
 
 from ..config import settings
+from .llm_common import extract_chat_message_text
 
 
 @dataclass
@@ -192,11 +193,8 @@ class RuntimeConfigService:
             payload = response.json()
 
         latency_ms = int((time.perf_counter() - started_at) * 1000)
-        content = (
-            payload.get("choices", [{}])[0]
-            .get("message", {})
-            .get("content", "")
-        )
+        message = payload.get("choices", [{}])[0].get("message", {})
+        content = extract_chat_message_text(message if isinstance(message, dict) else {})
         return {
             "latency_ms": latency_ms,
             "reply_preview": str(content).strip()[:160] or None,

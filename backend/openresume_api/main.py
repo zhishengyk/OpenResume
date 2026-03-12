@@ -997,6 +997,14 @@ async def retry_search_session(session_id: str, db: SessionDep):
 
 
 @app.post(
+    "/api/search-sessions/{session_id}/start-analysis",
+    response_model=SearchSessionResponse,
+)
+async def start_search_analysis(session_id: str, db: SessionDep):
+    return await search_service.start_analysis(db, session_id)
+
+
+@app.post(
     "/api/search-sessions/{session_id}/open-verification",
     response_model=VerificationWindowResponse,
 )

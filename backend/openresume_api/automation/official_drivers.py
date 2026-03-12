@@ -16,6 +16,7 @@ class OfficialDriverConfig:
     company_key: str
     display_name: str
     login_markers: tuple[str, ...]
+    session_ready_markers: tuple[str, ...]
     captcha_markers: tuple[str, ...]
     form_open_selectors: tuple[str, ...]
     resume_upload_selectors: tuple[str, ...]
@@ -65,6 +66,14 @@ COMMON_LOGIN_MARKERS = (
     "login",
     "\u8d26\u53f7\u767b\u5f55",
 )
+COMMON_SESSION_READY_MARKERS = (
+    "\u9000\u51fa\u767b\u5f55",
+    "log out",
+    "sign out",
+    "\u4e2a\u4eba\u4e2d\u5fc3",
+    "\u6211\u7684\u6295\u9012",
+    "\u6211\u7684\u7533\u8bf7",
+)
 COMMON_CAPTCHA_MARKERS = (
     "\u9a8c\u8bc1\u7801",
     "captcha",
@@ -83,6 +92,7 @@ def _config(
     company_key: str,
     display_name: str,
     login_markers: tuple[str, ...] = COMMON_LOGIN_MARKERS,
+    session_ready_markers: tuple[str, ...] = (),
     login_launch_mode: LoginLaunchMode = "direct",
     login_open_selectors: tuple[str, ...] = (),
     login_ready_wait_ms: int = 1200,
@@ -92,6 +102,7 @@ def _config(
         company_key=company_key,
         display_name=display_name,
         login_markers=login_markers,
+        session_ready_markers=session_ready_markers,
         captcha_markers=COMMON_CAPTCHA_MARKERS,
         form_open_selectors=COMMON_FORM_OPEN_SELECTORS,
         resume_upload_selectors=COMMON_RESUME_UPLOAD_SELECTORS,
@@ -125,6 +136,12 @@ CONFIGS: dict[str, OfficialDriverConfig] = {
         company_key="tencent",
         display_name="\u817e\u8baf",
         login_markers=COMMON_LOGIN_MARKERS + ("\u626b\u7801\u767b\u5f55", "QQ\u767b\u5f55"),
+        session_ready_markers=COMMON_SESSION_READY_MARKERS
+        + (
+            "\u6295\u9012\u8bb0\u5f55",
+            "\u6211\u7684\u5fd7\u613f",
+            "\u6211\u7684\u7b80\u5386",
+        ),
     ),
     "tme": _config(
         company_key="tme",
@@ -313,6 +330,11 @@ class GenericOfficialDriver:
             and not any(marker in current_url for marker in COMMON_LOGIN_URL_MARKERS)
         ):
             return True, f"{self.config.display_name} 登录缓存可用。"
+
+        if self.config.session_ready_markers and await page.content_contains(
+            list(self.config.session_ready_markers)
+        ):
+            return True, f"{self.config.display_name} \u767b\u5f55\u7f13\u5b58\u53ef\u7528\u3002"
 
         if await page.content_contains(list(self.config.login_markers)):
             return (

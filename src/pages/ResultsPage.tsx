@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  Bot,
   ChevronLeft,
   ChevronRight,
   RefreshCw,
@@ -45,10 +46,7 @@ function sessionRefetchInterval(
   if (session.status === "running") {
     return 2000;
   }
-  if (
-    session.status === "ready" &&
-    (session.analysis_status === "pending" || session.analysis_status === "running")
-  ) {
+  if (session.status === "ready" && session.analysis_status === "running") {
     return 2000;
   }
   return false;
@@ -123,6 +121,14 @@ export function ResultsPage() {
     },
   });
 
+  const startAnalysisMutation = useMutation({
+    mutationFn: () => api.startSearchAnalysis(sessionId!),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["search-session", sessionId] });
+      void queryClient.invalidateQueries({ queryKey: ["search-matches", sessionId] });
+    },
+  });
+
   const createBatchMutation = useMutation({
     mutationFn: () =>
       api.createApplyBatch({
@@ -170,9 +176,10 @@ export function ResultsPage() {
   const isBlocked = sessionQuery.data?.status === "blocked";
   const isRunning = sessionQuery.data?.status === "running";
   const analysisStatus = sessionQuery.data?.analysis_status;
+  const analysisPending =
+    sessionQuery.data?.status === "ready" && analysisStatus === "pending";
   const analysisInProgress =
-    sessionQuery.data?.status === "ready" &&
-    (analysisStatus === "pending" || analysisStatus === "running");
+    sessionQuery.data?.status === "ready" && analysisStatus === "running";
   const analysisFailed = sessionQuery.data?.status === "ready" && analysisStatus === "failed";
   const analysisReady = sessionQuery.data?.status === "ready" && analysisStatus === "ready";
 
@@ -191,7 +198,7 @@ export function ResultsPage() {
   );
   const allListingIds = useMemo(() => matches.map((match) => match.listing_id), [matches]);
 
-  const analysisProviderLabel = useMemo(() => {
+  const legacyAnalysisProviderLabel = useMemo(() => {
     if (analysisInProgress) {
       return "处理中";
     }
@@ -204,11 +211,44 @@ export function ResultsPage() {
     return "--";
   }, [analysisFailed, analysisInProgress, analysisReady, sessionQuery.data]);
 
-  const analysisHint = analysisInProgress
+  const legacyAnalysisHint = analysisInProgress
     ? "规则排序结果已经可看，模型分析完成后会自动刷新并重新排序。"
     : analysisFailed
       ? "模型分析未完成，当前仍显示规则排序结果。"
       : "模型分析完成后，这里会显示当前实际生效的分析来源。";
+
+  const analysisProviderLabel = useMemo(() => {
+    if (analysisPending) {
+      return "\u672a\u5f00\u59cb";
+    }
+    if (analysisInProgress) {
+      return "\u5206\u6790\u4e2d";
+    }
+    if (analysisFailed) {
+      return "\u5931\u8d25";
+    }
+    if (analysisReady && sessionQuery.data) {
+      return pillLabel(sessionQuery.data.analysis_provider);
+    }
+    return "--";
+  }, [
+    analysisFailed,
+    analysisInProgress,
+    analysisPending,
+    analysisReady,
+    sessionQuery.data,
+  ]);
+
+  const analysisHint = analysisPending
+    ? "\u7ed3\u679c\u5df2\u51c6\u5907\u597d\uff0c\u70b9\u51fb\u6309\u94ae\u540e\u624d\u4f1a\u5f00\u59cb AI \u5206\u6790\u548c\u91cd\u6392\u5e8f\u3002"
+    : analysisInProgress
+      ? "\u89c4\u5219\u6392\u5e8f\u7ed3\u679c\u5df2\u53ef\u67e5\u770b\uff0cAI \u5206\u6790\u5b8c\u6210\u540e\u4f1a\u81ea\u52a8\u5237\u65b0\u5e76\u91cd\u65b0\u6392\u5e8f\u3002"
+      : analysisFailed
+        ? "\u672c\u6b21 AI \u5206\u6790\u6ca1\u6709\u5b8c\u6210\uff0c\u5f53\u524d\u4ecd\u663e\u793a\u89c4\u5219\u6392\u5e8f\u7ed3\u679c\u3002"
+        : "\u5b8c\u6210 AI \u5206\u6790\u540e\uff0c\u8fd9\u91cc\u4f1a\u663e\u793a\u5f53\u524d\u751f\u6548\u7684\u5206\u6790\u6765\u6e90\u3002";
+
+  void legacyAnalysisProviderLabel;
+  void legacyAnalysisHint;
 
   const batchErrorMessage =
     createBatchMutation.isError && createBatchMutation.error instanceof Error
@@ -274,6 +314,33 @@ export function ResultsPage() {
         ) : null}
       </section>
 
+      {analysisPending ? (
+        <section className="rounded-[28px] border border-mint/30 bg-mint/10 p-5 shadow-console">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-3xl">
+              <p className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-mint">
+                <Bot size={16} />
+                AI Analysis
+              </p>
+              <p className="mt-3 text-sm leading-6 text-ink">
+                {"\u89c4\u5219\u6392\u5e8f\u5df2\u5b8c\u6210\uff0c\u70b9\u51fb\u6309\u94ae\u540e\u624d\u4f1a\u5f00\u59cb\u5206\u6790\u5c97\u4f4d\uff0c\u5e76\u5728\u5b8c\u6210\u540e\u7528 AI \u7ed3\u679c\u91cd\u65b0\u6392\u5e8f\u3002"}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-ink px-4 py-2 text-sm font-semibold text-shell transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => startAnalysisMutation.mutate()}
+              disabled={startAnalysisMutation.isPending || !sessionId}
+            >
+              <Bot size={16} />
+              {startAnalysisMutation.isPending
+                ? "\u542f\u52a8\u4e2d..."
+                : "\u5f00\u59cb\u5206\u6790\u5c97\u4f4d"}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       {analysisInProgress ? (
         <section className="rounded-[28px] border border-signal/30 bg-signal/10 p-5 shadow-console">
           <p className="text-sm leading-6 text-ink">
@@ -285,9 +352,24 @@ export function ResultsPage() {
       {(analysisFailed ||
         (analysisReady && sessionQuery.data?.analysis_degraded && sessionQuery.data.analysis_notice)) ? (
         <section className="rounded-[28px] border border-amber-500/30 bg-amber-500/10 p-5 shadow-console">
-          <p className="text-sm leading-6 text-ink">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <p className="max-w-3xl text-sm leading-6 text-ink">
             {sessionQuery.data?.analysis_notice || "模型分析未完成，当前展示的是规则排序结果。"}
-          </p>
+            </p>
+            {analysisFailed ? (
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-shell px-4 py-2 text-sm font-semibold text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => startAnalysisMutation.mutate()}
+                disabled={startAnalysisMutation.isPending || !sessionId}
+              >
+                <Bot size={16} />
+                {startAnalysisMutation.isPending
+                  ? "\u91cd\u8bd5\u4e2d..."
+                  : "\u91cd\u65b0\u5206\u6790\u5c97\u4f4d"}
+              </button>
+            ) : null}
+          </div>
         </section>
       ) : null}
 

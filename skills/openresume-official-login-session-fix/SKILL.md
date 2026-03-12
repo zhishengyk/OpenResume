@@ -75,6 +75,18 @@ If the new bug is close to a previous one, do not add a new workflow.
 - Reuse frontend auto-provision of a default account for "login button disabled with no account".
 - Only create a new helper if the same patch would otherwise be repeated in 2 or more places.
 
+## Tencent pattern
+
+Tencent careers exposed a repeatable failure mode worth reusing:
+
+- Do not probe `https://careers.tencent.com/login.html?...` as the session-check target after login.
+- Use the homepage `https://careers.tencent.com/` as `session_check_url` instead, because successful auth may keep login-related text in the shell even when the session is valid.
+- In `official_drivers.py`, check positive signed-in markers before negative login markers when the site can render both at once.
+- For Tencent, reliable positive markers included `投递记录`, `我的志愿`, `我的简历`, plus generic signed-in markers such as `退出登录` and `个人中心`.
+- Add a focused fake-page test in `backend/tests/test_official_account_pool.py` that returns both a positive Tencent marker and a generic login marker, and assert the session is treated as logged in.
+
+Use the same pattern for other SPAs that stay on a login-like shell or keep a global "登录" header after authentication.
+
 ## Verification
 
 Prefer lightweight checks first:

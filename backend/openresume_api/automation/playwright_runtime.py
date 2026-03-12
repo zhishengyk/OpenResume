@@ -8,6 +8,8 @@ from typing import TypeVar
 from .base import ApplyExecutionOutcome, AutomationPage
 
 ResultT = TypeVar("ResultT")
+DESKTOP_VIEWPORT = {"width": 1440, "height": 960}
+INTERACTIVE_BROWSER_ARGS = ["--start-maximized"]
 
 
 class PlaywrightAutomationPage:
@@ -96,6 +98,24 @@ class PlaywrightAutomationPage:
 
 
 class PlaywrightAutomationRuntime:
+    @staticmethod
+    def _context_kwargs(state_path: Path, *, interactive: bool) -> dict[str, object]:
+        context_kwargs: dict[str, object] = {}
+        if state_path.exists():
+            context_kwargs["storage_state"] = str(state_path)
+        if interactive:
+            context_kwargs["no_viewport"] = True
+        else:
+            context_kwargs["viewport"] = dict(DESKTOP_VIEWPORT)
+        return context_kwargs
+
+    @staticmethod
+    def _launch_kwargs(*, headless: bool, interactive: bool) -> dict[str, object]:
+        launch_kwargs: dict[str, object] = {"headless": headless}
+        if interactive and not headless:
+            launch_kwargs["args"] = list(INTERACTIVE_BROWSER_ARGS)
+        return launch_kwargs
+
     async def inspect(
         self,
         *,
@@ -114,10 +134,10 @@ class PlaywrightAutomationRuntime:
         state_path.parent.mkdir(parents=True, exist_ok=True)
 
         async with async_playwright() as playwright:
-            browser = await playwright.chromium.launch(headless=headless)
-            context_kwargs = {}
-            if state_path.exists():
-                context_kwargs["storage_state"] = str(state_path)
+            browser = await playwright.chromium.launch(
+                **self._launch_kwargs(headless=headless, interactive=False)
+            )
+            context_kwargs = self._context_kwargs(state_path, interactive=False)
             context = await browser.new_context(**context_kwargs)
             page = await context.new_page()
             try:
@@ -159,10 +179,10 @@ class PlaywrightAutomationRuntime:
         state_path.parent.mkdir(parents=True, exist_ok=True)
 
         async with async_playwright() as playwright:
-            browser = await playwright.chromium.launch(headless=False)
-            context_kwargs = {}
-            if state_path.exists():
-                context_kwargs["storage_state"] = str(state_path)
+            browser = await playwright.chromium.launch(
+                **self._launch_kwargs(headless=False, interactive=True)
+            )
+            context_kwargs = self._context_kwargs(state_path, interactive=True)
             context = await browser.new_context(**context_kwargs)
             page = await context.new_page()
             done = asyncio.get_running_loop().create_future()
@@ -202,10 +222,10 @@ class PlaywrightAutomationRuntime:
         state_path.parent.mkdir(parents=True, exist_ok=True)
 
         async with async_playwright() as playwright:
-            browser = await playwright.chromium.launch(headless=False)
-            context_kwargs = {}
-            if state_path.exists():
-                context_kwargs["storage_state"] = str(state_path)
+            browser = await playwright.chromium.launch(
+                **self._launch_kwargs(headless=False, interactive=True)
+            )
+            context_kwargs = self._context_kwargs(state_path, interactive=True)
             context = await browser.new_context(**context_kwargs)
             page = await context.new_page()
             done = asyncio.get_running_loop().create_future()
