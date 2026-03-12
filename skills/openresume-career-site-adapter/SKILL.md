@@ -86,6 +86,33 @@ When adding a new company source, define all three variants in `manifest.py` if 
 - Ant Group search currently returns empty when `pageSize` is too large in some flows; cap to small page size (for example `<=10`) before judging the source as empty.
 - Live smoke may need a repo-local fallback. If the standalone smoke script drifts behind the repo and imports removed modules, call `OfficialAdapter.search_jobs()` directly with `source_companies` and `source_variants` to validate real drafts.
 
+## Notes From 2026-03-12
+
+- Didi dual-source model:
+  - Social jobs are available from `GET /recruit-portal-service/api/job/front/list` and `GET /recruit-portal-service/api/job/front/view/{jdId}`.
+  - The response shape is `{data, meta}` (no `code` field); do not hardcode status checks.
+  - Public social detail URL format is `https://talent.didiglobal.com/social/p/{jdId}`.
+  - Campus `Moka` APIs can return encrypted payloads; a reliable fallback is parsing `input#init-data` and extracting `jobs` from preloaded HTML JSON.
+- TME split by API family:
+  - Experienced: `POST /api/job/list` + `GET /api/job/info`.
+  - Campus and internship: `POST /api/uc-job/list` + `GET /api/uc-job/info`.
+  - Variant split is stable via `job_type_descr` (`应届生` vs `实习生`).
+- Ctrip list/detail contract:
+  - Use `POST /api/hrrecruit/getJobAd` for both list and detail.
+  - Experienced uses `category=1`; campus pool uses `category=2`.
+  - Internship can be split from category 2 via `kindName` (`Summer Intern`) vs `Fresh Graduates`.
+  - Detail query uses `condition.fromId=[...]`.
+- NetEase dual-domain model:
+  - Social and internship use `POST https://hr.163.com/api/hr163/position/queryPage` with `workType=0/1`.
+  - Campus uses `GET https://campus.163.com/api/campuspc/position/getJobList`.
+  - Resolve campus `projectId` from `GET /api/campuspc/project/navigation/list` instead of hardcoding where possible.
+- Baidu SSR data strategy:
+  - `window.__INITIAL_DATA__` on `/jobs/social-list` and `/jobs/list?recruitType=...` can provide usable `listDetailData`.
+  - Some pages include JS `undefined` in that object; sanitize before `json.loads`.
+- Quark as Alibaba-shell reuse:
+  - Reuse `AlibabaCareerClient` with Quark channels (`Quark_group_official_site`, `Quark_campus_group_official_site`).
+  - Quark search uses `key` instead of `keyword` for query text.
+
 ## Reference
 
 Read `references/provider-patterns.md` when the site resembles ByteDance ATSX, Taotian custom JS, Aliyun careers shell, Tencent dual-site (careers + join.qq), PDD shell pages, Feishu, or a Next.js app.

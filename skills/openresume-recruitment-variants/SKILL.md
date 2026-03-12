@@ -75,6 +75,41 @@ Recommended pattern:
 2. Run `/searchCondition/list` warmup before `/position/search`.
 3. Keep one empty-keyword fallback pass when keyword queries return zero.
 
+## Ctrip Mapping Template
+
+Use this mapping for `job.ctrip.com`:
+
+| Variant | API Category | Extra Split |
+|---------|--------------|-------------|
+| `experienced` | `category=1` | none |
+| `campus` | `category=2` | exclude `kindName` values matching internship markers |
+| `internship` | `category=2` | include `kindName` values matching internship markers (for example `Summer Intern`) |
+
+Notes:
+
+1. List and detail both use `POST /api/hrrecruit/getJobAd`.
+2. Detail lookup is `condition.fromId=[...]`.
+
+## NetEase Mapping Template
+
+Use this mapping for NetEase official sources:
+
+| Variant | Domain | API |
+|---------|--------|-----|
+| `experienced` | `hr.163.com` | `POST /api/hr163/position/queryPage` with `workType=0` |
+| `campus` | `campus.163.com` | `GET /api/campuspc/position/getJobList` with resolved `projectId` |
+| `internship` | `hr.163.com` | `POST /api/hr163/position/queryPage` with `workType=1` |
+
+## TME Mapping Template
+
+Use this mapping for `join.tencentmusic.com`:
+
+| Variant | List API | Detail API | Variant Signal |
+|---------|----------|------------|----------------|
+| `experienced` | `POST /api/job/list` | `GET /api/job/info` | social endpoint family |
+| `campus` | `POST /api/uc-job/list` | `GET /api/uc-job/info` | `job_type_descr` like `应届生` |
+| `internship` | `POST /api/uc-job/list` | `GET /api/uc-job/info` | `job_type_descr` like `实习生` |
+
 ## Validation Checklist
 
 1. Add provider unit tests for variant mapping, pagination stop, dedupe, encoding fallback.
