@@ -1013,7 +1013,12 @@ def get_search_matches(session_id: str, db: SessionDep):
     matches = db.exec(
         select(JobMatch)
         .where(JobMatch.session_id == session_id)
-        .order_by(JobMatch.final_score.desc())
+        .order_by(
+            JobMatch.final_score.desc(),
+            JobMatch.rule_score.desc(),
+            JobMatch.updated_at.asc(),
+            JobMatch.id.asc(),
+        )
     ).all()
     jobs = {
         job.id: job
