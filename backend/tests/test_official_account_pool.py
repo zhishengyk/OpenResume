@@ -432,6 +432,57 @@ def test_check_session_accepts_redirect_away_from_login_page():
     assert "登录缓存可用" in message
 
 
+def test_tencent_check_session_accepts_homepage_ready_markers():
+    class FakePage:
+        def __init__(self):
+            self.url = ""
+
+        async def goto(self, url: str) -> None:
+            self.url = "https://careers.tencent.com/"
+
+        async def current_url(self) -> str:
+            return self.url
+
+        async def wait_for_timeout(self, milliseconds: int) -> None:
+            return None
+
+        async def try_click(self, selectors: list[str]) -> str | None:
+            return None
+
+        async def evaluate(self, script: str) -> object:
+            return None
+
+        async def content_contains(self, markers: list[str]) -> bool:
+            marker_set = {marker.casefold() for marker in markers}
+            if "\u6295\u9012\u8bb0\u5f55".casefold() in marker_set:
+                return True
+            if "\u767b\u5f55".casefold() in marker_set:
+                return True
+            return False
+
+        async def has_any(self, selectors: list[str]) -> str | None:
+            return None
+
+        async def try_set_input_files(self, selectors: list[str], file_path: str) -> str | None:
+            return None
+
+        async def try_fill(self, selectors: list[str], value: str) -> str | None:
+            return None
+
+    driver = get_official_driver("tencent")
+    site = get_official_site("tencent")
+    ready, message = asyncio.run(
+        driver.check_session(
+            FakePage(),
+            target_url=site.session_check_url or site.login_url,
+        )
+    )
+
+    assert ready is True
+    assert site.session_check_url == "https://careers.tencent.com/"
+    assert "\u767b\u5f55\u7f13\u5b58\u53ef\u7528" in message
+
+
 def test_official_account_login_and_session_test_update_binary_status(client, monkeypatch):
     class FakeRuntime:
         def __init__(self):

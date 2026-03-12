@@ -38,7 +38,7 @@ OFFICIAL_SITE_DESCRIPTORS: tuple[OfficialSiteDescriptor, ...] = (
         company_name="\u817e\u8baf",
         label="\u817e\u8baf\u5b98\u7f51",
         login_url="https://careers.tencent.com/login.html?state=https%3A%2F%2Fcareers.tencent.com%2F",
-        session_check_url="https://careers.tencent.com/login.html?state=https%3A%2F%2Fcareers.tencent.com%2F",
+        session_check_url="https://careers.tencent.com/",
         source_sites=("careers.tencent.com", "join.qq.com"),
         supported_variants=ALL_VARIANTS,
         aliases=("Tencent", "QQ"),
