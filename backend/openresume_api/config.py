@@ -67,6 +67,42 @@ class Settings:
     official_tencent_page_size: int = int(
         os.getenv("OPENRESUME_OFFICIAL_TENCENT_PAGE_SIZE", "50")
     )
+    official_tme_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_TME_PAGE_LIMIT", "8")
+    )
+    official_tme_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_TME_PAGE_SIZE", "20")
+    )
+    official_baidu_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_BAIDU_PAGE_LIMIT", "8")
+    )
+    official_baidu_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_BAIDU_PAGE_SIZE", "20")
+    )
+    official_didi_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_DIDI_PAGE_LIMIT", "8")
+    )
+    official_didi_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_DIDI_PAGE_SIZE", "20")
+    )
+    official_ctrip_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_CTRIP_PAGE_LIMIT", "8")
+    )
+    official_ctrip_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_CTRIP_PAGE_SIZE", "50")
+    )
+    official_netease_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_NETEASE_PAGE_LIMIT", "8")
+    )
+    official_netease_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_NETEASE_PAGE_SIZE", "50")
+    )
+    official_quark_page_limit: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_QUARK_PAGE_LIMIT", "8")
+    )
+    official_quark_page_size: int = int(
+        os.getenv("OPENRESUME_OFFICIAL_QUARK_PAGE_SIZE", "50")
+    )
     official_taobao_page_limit: int = int(
         os.getenv("OPENRESUME_OFFICIAL_TAOBAO_PAGE_LIMIT", "8")
     )

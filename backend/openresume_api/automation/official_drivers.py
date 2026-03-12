@@ -126,6 +126,32 @@ CONFIGS: dict[str, OfficialDriverConfig] = {
         display_name="\u817e\u8baf",
         login_markers=COMMON_LOGIN_MARKERS + ("\u626b\u7801\u767b\u5f55", "QQ\u767b\u5f55"),
     ),
+    "tme": _config(
+        company_key="tme",
+        display_name="\u817e\u8baf\u97f3\u4e50\u5a31\u4e50\u96c6\u56e2",
+        login_markers=COMMON_LOGIN_MARKERS + ("\u817e\u8baf\u97f3\u4e50", "\u9a8c\u8bc1\u7801\u767b\u5f55"),
+    ),
+    "baidu": _config(
+        company_key="baidu",
+        display_name="\u767e\u5ea6",
+        login_markers=COMMON_LOGIN_MARKERS + ("\u767e\u5ea6", "\u767e\u5ea6\u8d26\u53f7"),
+    ),
+    "didi": _config(
+        company_key="didi",
+        display_name="\u6ef4\u6ef4",
+        login_markers=COMMON_LOGIN_MARKERS + ("\u6ef4\u6ef4", "\u624b\u673a\u53f7\u767b\u5f55"),
+    ),
+    "ctrip": _config(
+        company_key="ctrip",
+        display_name="\u643a\u7a0b",
+        login_markers=COMMON_LOGIN_MARKERS + ("\u643a\u7a0b", "\u4e2a\u4eba\u4e3b\u9875"),
+    ),
+    "netease": _config(
+        company_key="netease",
+        display_name="\u7f51\u6613",
+        login_markers=COMMON_LOGIN_MARKERS + ("\u7f51\u6613", "\u6613\u4fe1", "\u624b\u673a\u53f7\u767b\u5f55"),
+    ),
+    "quark": _alibaba_config("quark", "\u5938\u514b"),
     "taobao": _alibaba_config("taobao", "\u6dd8\u5929\u96c6\u56e2"),
     "aliyun": _alibaba_config("aliyun", "\u963f\u91cc\u4e91"),
     "alibaba_holding": _alibaba_config("alibaba_holding", "\u963f\u91cc\u63a7\u80a1"),

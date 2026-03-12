@@ -263,6 +263,36 @@ def test_reverse_probed_login_launch_strategies_cover_all_sites():
             "clicks": 0,
             "scripts": 0,
         },
+        "tme": {
+            "url": "https://join.tencentmusic.com/login",
+            "clicks": 0,
+            "scripts": 0,
+        },
+        "baidu": {
+            "url": "https://talent.baidu.com/",
+            "clicks": 0,
+            "scripts": 0,
+        },
+        "didi": {
+            "url": "https://talent.didiglobal.com/social/list/1",
+            "clicks": 0,
+            "scripts": 0,
+        },
+        "ctrip": {
+            "url": "https://job.ctrip.com/",
+            "clicks": 0,
+            "scripts": 0,
+        },
+        "netease": {
+            "url": "https://hr.163.com/",
+            "clicks": 0,
+            "scripts": 0,
+        },
+        "quark": {
+            "url": "https://talent.quark.cn/off-campus/home?lang=zh",
+            "clicks": 0,
+            "scripts": 1,
+        },
         "taobao": {
             "url": "https://talent.taotian.com/",
             "clicks": 0,
