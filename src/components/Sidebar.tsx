@@ -1,4 +1,11 @@
-import { AlertTriangle, Bot, FolderSearch2, History, Settings2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Bot,
+  FolderSearch2,
+  History,
+  KeyRound,
+  Settings2,
+} from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { cn } from "../lib/utils";
 
@@ -7,6 +14,7 @@ const items = [
   { to: "/models", label: "\u6a21\u578b\u914d\u7f6e", icon: Bot },
   { to: "/search", label: "\u641c\u7d22\u4efb\u52a1", icon: FolderSearch2 },
   { to: "/results", label: "\u7ed3\u679c\u9762\u677f", icon: AlertTriangle },
+  { to: "/assets", label: "\u8d26\u53f7\u4e0e\u7b80\u5386\u6c60", icon: KeyRound },
   { to: "/history", label: "\u5386\u53f2\u8bb0\u5f55", icon: History },
 ];
 
@@ -18,7 +26,7 @@ export function Sidebar() {
         <div>
           <p className="font-display text-4xl text-ink">OpenResume</p>
           <p className="mt-2 max-w-[16rem] text-sm leading-6 text-slate">
-            {"\u7b80\u5386\u9a71\u52a8\u641c\u5c97\u4e0e\u5f15\u5bfc\u6295\u9012"}
+            {"\u7b80\u5386\u9a71\u52a8\u641c\u5c97\u3001\u5b98\u7f51\u6295\u9012\u548c\u8d44\u4ea7\u6c60\u7ba1\u7406"}
           </p>
         </div>
 
@@ -51,7 +59,7 @@ export function Sidebar() {
           </p>
           <p className="mt-2 leading-6">
             {
-              "\u5f53\u524d\u7248\u672c\u7edd\u4e0d\u81ea\u52a8\u63d0\u4ea4\u7b80\u5386\u3002\u6240\u6709\u5f15\u5bfc\u52a8\u4f5c\u90fd\u4f1a\u5728\u6700\u7ec8\u63d0\u4ea4\u524d\u505c\u4e0b\u3002"
+              "\u9ed8\u8ba4\u6a21\u5f0f\u4e3a\u534a\u81ea\u52a8\u6295\u9012\uff0c\u4f1a\u5728\u6700\u7ec8\u63d0\u4ea4\u524d\u505c\u4e0b\u3002\u5168\u81ea\u52a8\u63d0\u4ea4\u9700\u8981\u989d\u5916\u786e\u8ba4\u98ce\u9669\u3002"
             }
           </p>
         </div>
@@ -59,4 +67,3 @@ export function Sidebar() {
     </aside>
   );
 }
-

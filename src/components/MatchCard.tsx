@@ -15,6 +15,9 @@ import { StatusPill } from "./StatusPill";
 
 interface MatchCardProps {
   match: JobMatch;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (listingId: string) => void;
 }
 
 type PendingAction = "review" | "guided_apply" | "open_raw";
@@ -199,7 +202,12 @@ function LocationPickerDialog({
   );
 }
 
-export function MatchCard({ match }: MatchCardProps) {
+export function MatchCard({
+  match,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
+}: MatchCardProps) {
   const queryClient = useQueryClient();
   const [isExpanded, setIsExpanded] = useState(false);
   const [locationPickerOpen, setLocationPickerOpen] = useState(false);
@@ -304,6 +312,19 @@ export function MatchCard({ match }: MatchCardProps) {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
+                {selectable ? (
+                  <label
+                    className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-ink"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() => onToggleSelect?.(match.listing_id)}
+                    />
+                    {selected ? "已选中" : "加入批量"}
+                  </label>
+                ) : null}
                 <StatusPill>{match.source_site}</StatusPill>
                 {match.analysis_degraded ? <StatusPill>降级</StatusPill> : null}
                 {isMerged ? <StatusPill>{`多地点 ${mergedCount}`}</StatusPill> : null}

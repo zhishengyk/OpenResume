@@ -174,3 +174,81 @@ class SearchFetchCache(SQLModel, table=True):
     created_at: datetime = Field(default_factory=now_utc)
     expires_at: datetime = Field(default_factory=now_utc)
     hit_count: int = 0
+
+
+class OfficialAccount(SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    company_key: str = Field(index=True)
+    company_name: str = ""
+    display_name: str = ""
+    username: str = ""
+    credential_key: str = Field(default_factory=lambda: str(uuid4()), index=True)
+    has_credentials: bool = False
+    is_default: bool = False
+    status: str = "active"
+    last_verified_at: datetime | None = None
+    last_test_message: str | None = None
+    last_tested_at: datetime | None = None
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+
+
+class OfficialSessionCache(SQLModel, table=True):
+    account_id: str = Field(primary_key=True)
+    company_key: str = Field(index=True)
+    storage_state_path: str = ""
+    status: str = "missing"
+    expires_at: datetime | None = None
+    last_success_at: datetime | None = None
+    last_verified_at: datetime | None = None
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+
+
+class ResumeAsset(SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    label: str = ""
+    source_filename: str = ""
+    storage_path: str = ""
+    mime_type: str = ""
+    file_size: int = 0
+    content_hash: str = ""
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+
+
+class CompanyBinding(SQLModel, table=True):
+    company_key: str = Field(primary_key=True)
+    default_resume_asset_id: str | None = None
+    updated_at: datetime = Field(default_factory=now_utc)
+
+
+class ApplyBatch(SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    session_id: str | None = Field(default=None, index=True)
+    platform: str = "official"
+    execution_mode: str = "semi_auto"
+    status: str = "queued"
+    message: str = ""
+    total_items: int = 0
+    completed_items: int = 0
+    submitted_items: int = 0
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+
+
+class ApplyBatchItem(SQLModel, table=True):
+    id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    batch_id: str = Field(index=True)
+    listing_id: str = Field(index=True)
+    company_key: str = Field(index=True)
+    account_id: str | None = Field(default=None, index=True)
+    resume_asset_id: str | None = Field(default=None, index=True)
+    execution_mode: str = "semi_auto"
+    status: str = "queued"
+    message: str = ""
+    verification_url: str | None = None
+    launch_url: str | None = None
+    context: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
