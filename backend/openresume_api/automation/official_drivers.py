@@ -8,6 +8,7 @@ from .base import ApplyExecutionOutcome, ApplyExecutionRequest, AutomationPage
 
 
 LoginLaunchMode = Literal["direct", "click", "alibaba_embed"]
+COMMON_LOGIN_URL_MARKERS = ("login", "signin", "sign-in", "passport")
 
 
 @dataclass(frozen=True)
@@ -273,6 +274,20 @@ class GenericOfficialDriver:
     ) -> tuple[bool, str]:
         await page.goto(target_url)
         await page.wait_for_timeout(min(1000, self.config.login_ready_wait_ms))
+        current_url = (await page.current_url()).casefold()
+        target_url_normalized = (target_url or "").casefold()
+        target_is_login_page = any(
+            marker in target_url_normalized for marker in COMMON_LOGIN_URL_MARKERS
+        )
+
+        if (
+            current_url
+            and target_is_login_page
+            and current_url != target_url_normalized
+            and not any(marker in current_url for marker in COMMON_LOGIN_URL_MARKERS)
+        ):
+            return True, f"{self.config.display_name} 登录缓存可用。"
+
         if await page.content_contains(list(self.config.login_markers)):
             return (
                 False,

@@ -220,9 +220,14 @@ def test_reverse_probed_login_launch_strategies_cover_all_sites():
             self.click_selectors: list[list[str]] = []
             self.waits: list[int] = []
             self.scripts: list[str] = []
+            self.url = ""
 
         async def goto(self, url: str) -> None:
             self.gotos.append(url)
+            self.url = url
+
+        async def current_url(self) -> str:
+            return self.url
 
         async def wait_for_timeout(self, milliseconds: int) -> None:
             self.waits.append(milliseconds)
@@ -353,6 +358,50 @@ def test_reverse_probed_login_launch_strategies_cover_all_sites():
         assert page.waits
 
 
+def test_check_session_accepts_redirect_away_from_login_page():
+    class FakePage:
+        def __init__(self):
+            self.url = ""
+
+        async def goto(self, url: str) -> None:
+            self.url = "https://jobs.bytedance.com/experienced/"
+
+        async def current_url(self) -> str:
+            return self.url
+
+        async def wait_for_timeout(self, milliseconds: int) -> None:
+            return None
+
+        async def try_click(self, selectors: list[str]) -> str | None:
+            return None
+
+        async def evaluate(self, script: str) -> object:
+            return None
+
+        async def content_contains(self, markers: list[str]) -> bool:
+            return True
+
+        async def has_any(self, selectors: list[str]) -> str | None:
+            return None
+
+        async def try_set_input_files(self, selectors: list[str], file_path: str) -> str | None:
+            return None
+
+        async def try_fill(self, selectors: list[str], value: str) -> str | None:
+            return None
+
+    driver = get_official_driver("bytedance")
+    ready, message = asyncio.run(
+        driver.check_session(
+            FakePage(),
+            target_url="https://jobs.bytedance.com/experienced/login",
+        )
+    )
+
+    assert ready is True
+    assert "登录缓存可用" in message
+
+
 def test_official_account_login_and_session_test_update_binary_status(client, monkeypatch):
     class FakeRuntime:
         def __init__(self):
@@ -370,6 +419,8 @@ def test_official_account_login_and_session_test_update_binary_status(client, mo
             *,
             storage_state_path: str,
             callback,
+            completion_callback=None,
+            completion_poll_ms: int = 1000,
             timeout_seconds: int = 300,
         ) -> None:
             path = Path(storage_state_path)
@@ -528,6 +579,8 @@ def test_apply_batch_flow_uses_assets_and_supports_retry(client, monkeypatch):
             *,
             storage_state_path: str,
             callback,
+            completion_callback=None,
+            completion_poll_ms: int = 1000,
             timeout_seconds: int = 300,
         ) -> None:
             path = Path(storage_state_path)

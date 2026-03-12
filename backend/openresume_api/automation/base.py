@@ -27,6 +27,8 @@ class ApplyExecutionOutcome:
 class AutomationPage(Protocol):
     async def goto(self, url: str) -> None: ...
 
+    async def current_url(self) -> str: ...
+
     async def content_contains(self, markers: list[str]) -> bool: ...
 
     async def has_any(self, selectors: list[str]) -> str | None: ...
@@ -60,5 +62,7 @@ class AutomationRuntime(Protocol):
         *,
         storage_state_path: str,
         callback,
+        completion_callback=None,
+        completion_poll_ms: int = 1000,
         timeout_seconds: int = 300,
     ) -> None: ...

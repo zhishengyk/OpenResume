@@ -794,10 +794,22 @@ async def login_official_account(account_id: str, db: SessionDep):
     site = get_official_site(account.company_key)
     driver = get_official_driver(account.company_key)
 
+    async def completion_callback() -> bool:
+        is_logged_in, _ = await playwright_automation_runtime.inspect(
+            storage_state_path=cache.storage_state_path,
+            headless=True,
+            callback=lambda page: driver.check_session(
+                page,
+                target_url=site.session_check_url or site.login_url,
+            ),
+        )
+        return is_logged_in
+
     try:
         await playwright_automation_runtime.interactive_run(
             storage_state_path=cache.storage_state_path,
             callback=lambda page: driver.launch_login(page, target_url=site.login_url),
+            completion_callback=completion_callback,
             timeout_seconds=900,
         )
     except Exception as error:

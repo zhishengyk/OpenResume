@@ -257,26 +257,26 @@ export function ResultsPage() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
+      <section className="rounded-[28px] border border-ink/10 bg-shell/90 p-5 shadow-console">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.24em] text-slate">搜索任务</p>
-            <h1 className="mt-3 font-display text-5xl text-ink">
+            <h1 className="mt-2 font-display text-3xl text-ink md:text-4xl">
               先清洗，再排序，最后补模型分析和投递动作。
             </h1>
           </div>
           {sessionQuery.data ? <StatusPill>{sessionQuery.data.status}</StatusPill> : null}
         </div>
         {sessionQuery.data?.summary ? (
-          <p className="mt-4 max-w-3xl text-sm leading-7 text-slate">
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-slate">
             {sessionQuery.data.summary}
           </p>
         ) : null}
       </section>
 
       {analysisInProgress ? (
-        <section className="rounded-[32px] border border-signal/30 bg-signal/10 p-6 shadow-console">
-          <p className="text-sm leading-7 text-ink">
+        <section className="rounded-[28px] border border-signal/30 bg-signal/10 p-5 shadow-console">
+          <p className="text-sm leading-6 text-ink">
             模型分析正在后台进行。当前列表先按规则分数展示，分析完成后会自动刷新，并按最终分重新排序。
           </p>
         </section>
@@ -284,32 +284,32 @@ export function ResultsPage() {
 
       {(analysisFailed ||
         (analysisReady && sessionQuery.data?.analysis_degraded && sessionQuery.data.analysis_notice)) ? (
-        <section className="rounded-[32px] border border-amber-500/30 bg-amber-500/10 p-6 shadow-console">
-          <p className="text-sm leading-7 text-ink">
+        <section className="rounded-[28px] border border-amber-500/30 bg-amber-500/10 p-5 shadow-console">
+          <p className="text-sm leading-6 text-ink">
             {sessionQuery.data?.analysis_notice || "模型分析未完成，当前展示的是规则排序结果。"}
           </p>
         </section>
       ) : null}
 
       {isBlocked ? (
-        <section className="rounded-[32px] border border-ember/30 bg-ember/10 p-6 shadow-console">
+        <section className="rounded-[28px] border border-ember/30 bg-ember/10 p-5 shadow-console">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-3xl">
               <p className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-ember">
                 <AlertTriangle size={16} />
                 需要验证
               </p>
-              <h2 className="mt-3 font-display text-3xl text-ink">
+              <h2 className="mt-2 font-display text-2xl text-ink md:text-[2rem]">
                 先完成验证，再继续这次搜索。
               </h2>
-              <p className="mt-3 text-sm leading-7 text-slate">
+              <p className="mt-3 text-sm leading-6 text-slate">
                 {sessionQuery.data?.blocked_reason || "平台要求先完成人工验证。"}
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
               <button
                 type="button"
-                className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-shell px-5 py-3 text-sm font-semibold text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-shell px-4 py-2 text-sm font-semibold text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-60"
                 onClick={() => openVerificationMutation.mutate()}
                 disabled={openVerificationMutation.isPending || !sessionId}
               >
@@ -318,7 +318,7 @@ export function ResultsPage() {
               </button>
               <button
                 type="button"
-                className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-ink px-5 py-3 text-sm font-semibold text-shell transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-ink px-4 py-2 text-sm font-semibold text-shell transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-60"
                 onClick={() => retrySearchMutation.mutate()}
                 disabled={retrySearchMutation.isPending || !sessionId}
               >
@@ -353,35 +353,35 @@ export function ResultsPage() {
       </section>
 
       {matches.length ? (
-        <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
+        <section className="rounded-[28px] border border-ink/10 bg-shell/90 p-5 shadow-console">
           <div className="flex flex-wrap items-start justify-between gap-5">
             <div>
               <p className="text-xs uppercase tracking-[0.2em] text-slate">批量投递</p>
-              <h2 className="mt-2 font-display text-3xl text-ink">
+              <h2 className="mt-2 font-display text-2xl text-ink md:text-[2rem]">
                 已选 {selectedListingIds.length} 个职位
               </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate">
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate">
                 系统会按公司分组，套用默认账号和默认简历。缺少资产的公司会在创建批次时直接阻塞。
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                className="rounded-full border border-ink/10 bg-paper px-4 py-2 text-sm font-semibold text-ink transition hover:bg-shell"
+                className="rounded-full border border-ink/10 bg-paper px-3.5 py-1.5 text-sm font-semibold text-ink transition hover:bg-shell"
                 onClick={selectCurrentPage}
               >
                 选中当前页
               </button>
               <button
                 type="button"
-                className="rounded-full border border-ink/10 bg-paper px-4 py-2 text-sm font-semibold text-ink transition hover:bg-shell"
+                className="rounded-full border border-ink/10 bg-paper px-3.5 py-1.5 text-sm font-semibold text-ink transition hover:bg-shell"
                 onClick={selectAllResults}
               >
                 选中全部结果
               </button>
               <button
                 type="button"
-                className="rounded-full border border-ink/10 bg-paper px-4 py-2 text-sm font-semibold text-ink transition hover:bg-shell"
+                className="rounded-full border border-ink/10 bg-paper px-3.5 py-1.5 text-sm font-semibold text-ink transition hover:bg-shell"
                 onClick={clearSelection}
               >
                 清空选择
@@ -389,10 +389,10 @@ export function ResultsPage() {
             </div>
           </div>
 
-          <div className="mt-5 flex flex-wrap items-center gap-3">
+          <div className="mt-4 flex flex-wrap items-center gap-3">
             <button
               type="button"
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+              className={`rounded-full px-3.5 py-1.5 text-sm font-semibold transition ${
                 executionMode === "semi_auto"
                   ? "bg-ink text-shell"
                   : "border border-ink/10 bg-paper text-ink hover:bg-shell"
@@ -403,7 +403,7 @@ export function ResultsPage() {
             </button>
             <button
               type="button"
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+              className={`rounded-full px-3.5 py-1.5 text-sm font-semibold transition ${
                 executionMode === "auto_submit"
                   ? "bg-ember text-shell"
                   : "border border-ink/10 bg-paper text-ink hover:bg-shell"
@@ -414,7 +414,7 @@ export function ResultsPage() {
             </button>
             <button
               type="button"
-              className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-shell transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:bg-ink/40"
+              className="inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2 text-sm font-semibold text-shell transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:bg-ink/40"
               disabled={!selectedListingIds.length || createBatchMutation.isPending}
               onClick={createBatch}
             >
