@@ -190,6 +190,7 @@ export interface OfficialSite {
   company_key: string;
   company_name: string;
   label: string;
+  login_url: string;
   source_sites: string[];
   supported_variants: string[];
   supports_auto_submit: boolean;
@@ -216,6 +217,9 @@ export interface OfficialAccount {
   has_credentials: boolean;
   is_default: boolean;
   status: string;
+  is_logged_in: boolean;
+  last_test_message?: string | null;
+  last_tested_at?: string | null;
   last_verified_at?: string | null;
   created_at: string;
   updated_at: string;

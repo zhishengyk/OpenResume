@@ -31,6 +31,10 @@ class AutomationPage(Protocol):
 
     async def has_any(self, selectors: list[str]) -> str | None: ...
 
+    async def evaluate(self, script: str) -> object: ...
+
+    async def wait_for_timeout(self, milliseconds: int) -> None: ...
+
     async def try_set_input_files(
         self,
         selectors: list[str],
@@ -50,3 +54,11 @@ class AutomationRuntime(Protocol):
         headless: bool,
         callback,
     ) -> ApplyExecutionOutcome: ...
+
+    async def interactive_run(
+        self,
+        *,
+        storage_state_path: str,
+        callback,
+        timeout_seconds: int = 300,
+    ) -> None: ...

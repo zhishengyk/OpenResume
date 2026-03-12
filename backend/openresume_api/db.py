@@ -490,6 +490,23 @@ def _rebuild_derived_tables_if_needed(connection: sqlite3.Connection) -> None:
     )
 
 
+def _migrate_official_accounts(connection: sqlite3.Connection) -> None:
+    if not _table_exists(connection, "officialaccount"):
+        return
+    _add_column_if_missing(
+        connection,
+        "officialaccount",
+        "last_test_message",
+        "last_test_message TEXT",
+    )
+    _add_column_if_missing(
+        connection,
+        "officialaccount",
+        "last_tested_at",
+        "last_tested_at DATETIME",
+    )
+
+
 def run_compat_migrations() -> None:
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(settings.database_path)
@@ -497,6 +514,7 @@ def run_compat_migrations() -> None:
         _migrate_candidate_profiles(connection)
         _migrate_search_sessions(connection)
         _migrate_application_attempts(connection)
+        _migrate_official_accounts(connection)
         _rebuild_derived_tables_if_needed(connection)
         connection.commit()
     finally:

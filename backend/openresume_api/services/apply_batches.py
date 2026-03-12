@@ -12,7 +12,7 @@ from ..automation.official_drivers import get_official_driver
 from ..automation.playwright_runtime import playwright_automation_runtime
 from ..models import ApplyBatch, ApplyBatchItem, CandidateProfile, JobListing
 from .official_assets import official_asset_service
-from .official_sites import resolve_company_key
+from .official_sites import get_official_site, resolve_company_key
 
 
 FINAL_ITEM_STATUSES = {"prepared", "submitted", "failed", "cancelled"}
@@ -233,13 +233,30 @@ class ApplyBatchService:
 
             account = official_asset_service.get_account(db, item.account_id or "")
             resume_asset = official_asset_service.get_resume_asset(db, item.resume_asset_id or "")
-            cache = official_asset_service.session_cache_for_account(db, account.id)
+            cache = official_asset_service.ensure_session_cache(db, account.id)
             profile = db.get(CandidateProfile, 1) or CandidateProfile(id=1)
-            if cache is None:
-                cache = official_asset_service.mark_session_cache(
+            site = get_official_site(item.company_key)
+            driver = self._driver_getter(item.company_key)
+
+            if not official_asset_service.storage_state_exists(cache):
+                message = f"{account.company_name} 当前未登录，请先在账号池完成官网登录。"
+                now = datetime.utcnow()
+                official_asset_service.mark_session_cache(
                     db,
                     account_id=account.id,
                     status="missing",
+                    last_verified_at=now,
+                )
+                official_asset_service.record_account_test_result(
+                    db,
+                    account_id=account.id,
+                    message=message,
+                    tested_at=now,
+                )
+                return ApplyExecutionOutcome(
+                    status="failed",
+                    message=message,
+                    context={"company_key": item.company_key, "phase": "login"},
                 )
 
             request = ApplyExecutionRequest(
@@ -253,7 +270,44 @@ class ApplyBatchService:
             )
 
         try:
-            driver = self._driver_getter(item.company_key)
+            session_ready, session_message = await self._runtime.inspect(
+                storage_state_path=request.storage_state_path,
+                headless=True,
+                callback=lambda page: driver.check_session(
+                    page,
+                    target_url=site.session_check_url or site.login_url,
+                ),
+            )
+            now = datetime.utcnow()
+            if not session_ready:
+                with Session(db_module.engine) as db:
+                    official_asset_service.mark_session_cache(
+                        db,
+                        account_id=item.account_id or "",
+                        status="missing",
+                        last_verified_at=now,
+                    )
+                    official_asset_service.record_account_test_result(
+                        db,
+                        account_id=item.account_id or "",
+                        message=session_message,
+                        tested_at=now,
+                    )
+                return ApplyExecutionOutcome(
+                    status="failed",
+                    message=session_message,
+                    context={"company_key": item.company_key, "phase": "login"},
+                )
+
+            with Session(db_module.engine) as db:
+                official_asset_service.mark_session_cache(
+                    db,
+                    account_id=item.account_id or "",
+                    status="ready",
+                    last_success_at=now,
+                    last_verified_at=now,
+                )
+
             outcome = await self._runtime.run(
                 storage_state_path=request.storage_state_path,
                 headless=item.execution_mode == "auto_submit",
@@ -265,6 +319,13 @@ class ApplyBatchService:
                     db,
                     account_id=item.account_id or "",
                     status="error",
+                    last_verified_at=datetime.utcnow(),
+                )
+                official_asset_service.record_account_test_result(
+                    db,
+                    account_id=item.account_id or "",
+                    message=str(error),
+                    tested_at=datetime.utcnow(),
                 )
             return ApplyExecutionOutcome(
                 status="failed",
@@ -278,6 +339,7 @@ class ApplyBatchService:
                     account_id=item.account_id or "",
                     status="ready",
                     last_success_at=datetime.utcnow(),
+                    last_verified_at=datetime.utcnow(),
                 )
             elif outcome.status == "needs_verification":
                 official_asset_service.mark_session_cache(
@@ -286,6 +348,20 @@ class ApplyBatchService:
                     status="needs_verification",
                     last_verified_at=datetime.utcnow(),
                 )
+            elif outcome.status == "failed":
+                official_asset_service.mark_session_cache(
+                    db,
+                    account_id=item.account_id or "",
+                    status="missing",
+                    last_verified_at=datetime.utcnow(),
+                )
+            official_asset_service.record_account_test_result(
+                db,
+                account_id=item.account_id or "",
+                message=outcome.message,
+                tested_at=datetime.utcnow(),
+                verified_at=datetime.utcnow() if outcome.status in {"prepared", "submitted"} else None,
+            )
 
         if outcome.status == "needs_verification" and outcome.verification_url:
             try:

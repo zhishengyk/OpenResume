@@ -187,6 +187,8 @@ class OfficialAccount(SQLModel, table=True):
     is_default: bool = False
     status: str = "active"
     last_verified_at: datetime | None = None
+    last_test_message: str | None = None
+    last_tested_at: datetime | None = None
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)
 

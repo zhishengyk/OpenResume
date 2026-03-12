@@ -70,7 +70,11 @@ class OfficialAssetService:
 
         account.company_key = company_key
         account.company_name = site.company_name
-        account.display_name = (display_name or "").strip() or (username or "").strip()
+        account.display_name = (
+            (display_name or "").strip()
+            or (username or "").strip()
+            or site.company_name
+        )
         account.username = (username or "").strip()
         account.is_default = bool(is_default)
         account.status = (status or "active").strip() or "active"
@@ -90,12 +94,14 @@ class OfficialAssetService:
                 keep_account_id=account.id,
             )
 
-        self._ensure_session_cache(db, account)
+        self.ensure_session_cache(db, account.id)
         account.has_credentials = credential_store.has_password(account.credential_key)
         return account
 
     def delete_account(self, db: Session, account_id: str) -> None:
         account = self.get_account(db, account_id)
+        company_key = account.company_key
+        was_default = account.is_default
         cache = db.get(OfficialSessionCache, account.id)
         if cache:
             path = Path(cache.storage_state_path) if cache.storage_state_path else None
@@ -105,6 +111,18 @@ class OfficialAssetService:
         credential_store.delete_password(account.credential_key)
         db.delete(account)
         db.commit()
+
+        if was_default:
+            replacement = db.exec(
+                select(OfficialAccount)
+                .where(OfficialAccount.company_key == company_key)
+                .order_by(OfficialAccount.updated_at.desc())
+            ).first()
+            if replacement:
+                replacement.is_default = True
+                replacement.updated_at = datetime.utcnow()
+                db.add(replacement)
+                db.commit()
 
     def list_session_caches(self, db: Session) -> list[OfficialSessionCache]:
         return db.exec(
@@ -228,8 +246,21 @@ class OfficialAssetService:
     def session_cache_for_account(self, db: Session, account_id: str) -> OfficialSessionCache | None:
         return db.get(OfficialSessionCache, account_id)
 
+    def ensure_session_cache(self, db: Session, account_id: str) -> OfficialSessionCache:
+        account = self.get_account(db, account_id)
+        return self._ensure_session_cache(db, account)
+
     def binding_for_company(self, db: Session, company_key: str) -> CompanyBinding:
         return db.get(CompanyBinding, company_key) or CompanyBinding(company_key=company_key)
+
+    def storage_state_exists(self, cache: OfficialSessionCache | None) -> bool:
+        if cache is None or not cache.storage_state_path:
+            return False
+        path = Path(cache.storage_state_path)
+        return path.exists() and path.is_file()
+
+    def is_logged_in(self, cache: OfficialSessionCache | None) -> bool:
+        return bool(cache and cache.status == "ready" and self.storage_state_exists(cache))
 
     def mark_session_cache(
         self,
@@ -252,6 +283,28 @@ class OfficialAssetService:
         db.commit()
         db.refresh(cache)
         return cache
+
+    def record_account_test_result(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        message: str,
+        tested_at: datetime | None = None,
+        verified_at: datetime | None = None,
+    ) -> OfficialAccount:
+        account = self.get_account(db, account_id)
+        now = tested_at or datetime.utcnow()
+        account.last_test_message = (message or "").strip() or None
+        account.last_tested_at = now
+        if verified_at is not None:
+            account.last_verified_at = verified_at
+        account.updated_at = now
+        db.add(account)
+        db.commit()
+        db.refresh(account)
+        account.has_credentials = credential_store.has_password(account.credential_key)
+        return account
 
     def _ensure_session_cache(self, db: Session, account: OfficialAccount) -> OfficialSessionCache:
         cache = db.get(OfficialSessionCache, account.id)

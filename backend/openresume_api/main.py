@@ -55,16 +55,19 @@ from .schemas import (
     SearchSessionResponse,
     VerificationWindowResponse,
 )
+from .automation.official_drivers import get_official_driver
+from .automation.playwright_runtime import playwright_automation_runtime
+from .career_collectors import get_available_companies, get_available_variants, load_sources
 from .services.apply_batches import apply_batch_service
 from .services.compliance import compliance_service
 from .services.official_assets import official_asset_service
 from .services.events import event_bus
+from .services.official_sites import get_official_site
 from .services.platform_gateway import platform_gateway
 from .services.profile import profile_service
 from .services.risk import risk_control_service
 from .services.runtime_config import runtime_config_service
 from .services.search import search_service
-from .career_collectors import get_available_companies, get_available_variants, load_sources
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
@@ -149,6 +152,9 @@ def official_account_response(
         has_credentials=account.has_credentials,
         is_default=account.is_default,
         status=account.status,
+        is_logged_in=official_asset_service.is_logged_in(cache),
+        last_test_message=account.last_test_message,
+        last_tested_at=account.last_tested_at,
         last_verified_at=account.last_verified_at,
         created_at=account.created_at,
         updated_at=account.updated_at,
@@ -227,6 +233,87 @@ def official_account_responses(
         official_account_response(account, cache_index.get(account.id))
         for account in accounts
     ]
+
+
+async def probe_official_account_session(
+    db: Session,
+    *,
+    account_id: str,
+) -> OfficialAccountResponse:
+    account = official_asset_service.get_account(db, account_id)
+    cache = official_asset_service.ensure_session_cache(db, account.id)
+    site = get_official_site(account.company_key)
+    now = datetime.utcnow()
+
+    if not official_asset_service.storage_state_exists(cache):
+        cache = official_asset_service.mark_session_cache(
+            db,
+            account_id=account.id,
+            status="missing",
+            last_verified_at=now,
+        )
+        account = official_asset_service.record_account_test_result(
+            db,
+            account_id=account.id,
+            message=f"{account.company_name} 当前未登录，请先点击登录完成官网登录。",
+            tested_at=now,
+        )
+        return official_account_response(account, cache)
+
+    driver = get_official_driver(account.company_key)
+    try:
+        is_logged_in, message = await playwright_automation_runtime.inspect(
+            storage_state_path=cache.storage_state_path,
+            headless=True,
+            callback=lambda page: driver.check_session(
+                page,
+                target_url=site.session_check_url or site.login_url,
+            ),
+        )
+    except Exception as error:
+        cache = official_asset_service.mark_session_cache(
+            db,
+            account_id=account.id,
+            status="error",
+            last_verified_at=now,
+        )
+        account = official_asset_service.record_account_test_result(
+            db,
+            account_id=account.id,
+            message=str(error),
+            tested_at=now,
+        )
+        return official_account_response(account, cache)
+
+    if is_logged_in:
+        cache = official_asset_service.mark_session_cache(
+            db,
+            account_id=account.id,
+            status="ready",
+            last_success_at=now,
+            last_verified_at=now,
+        )
+        account = official_asset_service.record_account_test_result(
+            db,
+            account_id=account.id,
+            message=message,
+            tested_at=now,
+            verified_at=now,
+        )
+    else:
+        cache = official_asset_service.mark_session_cache(
+            db,
+            account_id=account.id,
+            status="missing",
+            last_verified_at=now,
+        )
+        account = official_asset_service.record_account_test_result(
+            db,
+            account_id=account.id,
+            message=message,
+            tested_at=now,
+        )
+    return official_account_response(account, cache)
 
 
 def platform_session_response(platform: str, state: dict) -> PlatformSessionResponse:
@@ -650,6 +737,7 @@ def list_official_sites():
             company_key=site.company_key,
             company_name=site.company_name,
             label=site.label,
+            login_url=site.login_url,
             source_sites=list(site.source_sites),
             supported_variants=list(site.supported_variants),
             supports_auto_submit=site.supports_auto_submit,
@@ -697,6 +785,46 @@ def update_official_account(
     )
     cache = official_asset_service.session_cache_for_account(db, account.id)
     return official_account_response(account, cache)
+
+
+@app.post("/api/official-accounts/{account_id}/login", response_model=OfficialAccountResponse)
+async def login_official_account(account_id: str, db: SessionDep):
+    account = official_asset_service.get_account(db, account_id)
+    cache = official_asset_service.ensure_session_cache(db, account.id)
+    site = get_official_site(account.company_key)
+    driver = get_official_driver(account.company_key)
+
+    try:
+        await playwright_automation_runtime.interactive_run(
+            storage_state_path=cache.storage_state_path,
+            callback=lambda page: driver.launch_login(page, target_url=site.login_url),
+            timeout_seconds=900,
+        )
+    except Exception as error:
+        now = datetime.utcnow()
+        cache = official_asset_service.mark_session_cache(
+            db,
+            account_id=account.id,
+            status="error",
+            last_verified_at=now,
+        )
+        account = official_asset_service.record_account_test_result(
+            db,
+            account_id=account.id,
+            message=str(error),
+            tested_at=now,
+        )
+        return official_account_response(account, cache)
+
+    return await probe_official_account_session(db, account_id=account.id)
+
+
+@app.post(
+    "/api/official-accounts/{account_id}/session-test",
+    response_model=OfficialAccountResponse,
+)
+async def test_official_account_session(account_id: str, db: SessionDep):
+    return await probe_official_account_session(db, account_id=account_id)
 
 
 @app.delete("/api/official-accounts/{account_id}", status_code=204)

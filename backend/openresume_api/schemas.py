@@ -251,6 +251,7 @@ class OfficialSiteResponse(BaseModel):
     company_key: str
     company_name: str
     label: str
+    login_url: str
     source_sites: list[str]
     supported_variants: list[str]
     supports_auto_submit: bool
@@ -286,6 +287,9 @@ class OfficialAccountResponse(BaseModel):
     has_credentials: bool
     is_default: bool
     status: str
+    is_logged_in: bool
+    last_test_message: str | None = None
+    last_tested_at: datetime | None = None
     last_verified_at: datetime | None = None
     created_at: datetime
     updated_at: datetime

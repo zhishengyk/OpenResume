@@ -218,7 +218,7 @@ export const api = {
   createOfficialAccount: (payload: {
     company_key: string;
     display_name: string;
-    username: string;
+    username?: string;
     password?: string | null;
     is_default: boolean;
     status: string;
@@ -233,7 +233,7 @@ export const api = {
     payload: {
       company_key: string;
       display_name: string;
-      username: string;
+      username?: string;
       password?: string | null;
       is_default: boolean;
       status: string;
@@ -247,6 +247,14 @@ export const api = {
   deleteOfficialAccount: (accountId: string) =>
     request<void>(`/api/official-accounts/${accountId}`, {
       method: "DELETE",
+    }),
+  loginOfficialAccount: (accountId: string) =>
+    request<OfficialAccount>(`/api/official-accounts/${accountId}/login`, {
+      method: "POST",
+    }),
+  testOfficialAccountSession: (accountId: string) =>
+    request<OfficialAccount>(`/api/official-accounts/${accountId}/session-test`, {
+      method: "POST",
     }),
   listResumeAssets: () => request<ResumeAsset[]>("/api/resume-assets"),
   uploadResumeAsset: async (file: File, label?: string) => {

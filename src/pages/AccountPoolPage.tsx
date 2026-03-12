@@ -1,28 +1,46 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, Trash2, Upload, Vault } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  LoaderCircle,
+  LogIn,
+  RefreshCw,
+  Trash2,
+  Upload,
+  Vault,
+} from "lucide-react";
 import { useMemo, useState } from "react";
-import { MetricCard } from "../components/MetricCard";
-import { StatusPill } from "../components/StatusPill";
 import { api } from "../lib/api";
-import { pillLabel } from "../lib/utils";
+import { cn, pillLabel } from "../lib/utils";
 import type { OfficialAccount } from "../types";
 
 interface AccountDraft {
   display_name: string;
-  username: string;
-  password: string;
   is_default: boolean;
 }
 
-const emptyDraft = (): AccountDraft => ({
+const createEmptyDraft = (isDefault = true): AccountDraft => ({
   display_name: "",
-  username: "",
-  password: "",
-  is_default: true,
+  is_default: isDefault,
 });
+
+function formatDate(value?: string | null) {
+  if (!value) {
+    return "--";
+  }
+  return new Date(value).toLocaleString();
+}
+
+function loginTone(isLoggedIn: boolean) {
+  return isLoggedIn
+    ? "border-mint/40 bg-mint/15 text-ink"
+    : "border-ember/20 bg-ember/10 text-ember";
+}
 
 export function AccountPoolPage() {
   const queryClient = useQueryClient();
+  const [expandedCompanyKey, setExpandedCompanyKey] = useState<string | null>(null);
+  const [assetsExpanded, setAssetsExpanded] = useState(false);
   const [accountDrafts, setAccountDrafts] = useState<Record<string, AccountDraft>>({});
   const [assetLabel, setAssetLabel] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -54,35 +72,32 @@ export function AccountPoolPage() {
     mutationFn: (payload: {
       company_key: string;
       display_name: string;
-      username: string;
-      password?: string | null;
       is_default: boolean;
-      status: string;
-    }) => api.createOfficialAccount(payload),
+    }) =>
+      api.createOfficialAccount({
+        company_key: payload.company_key,
+        display_name: payload.display_name,
+        is_default: payload.is_default,
+        status: "active",
+        username: "",
+        password: null,
+      }),
     onSuccess: (_, payload) => {
       setAccountDrafts((current) => ({
         ...current,
-        [payload.company_key]: emptyDraft(),
+        [payload.company_key]: createEmptyDraft(false),
       }));
       refreshPoolQueries();
     },
   });
 
   const updateAccountMutation = useMutation({
-    mutationFn: (payload: {
-      accountId: string;
-      company_key: string;
-      display_name: string;
-      username: string;
-      password?: string | null;
-      is_default: boolean;
-      status: string;
-    }) =>
-      api.updateOfficialAccount(payload.accountId, {
+    mutationFn: (payload: OfficialAccount) =>
+      api.updateOfficialAccount(payload.id, {
         company_key: payload.company_key,
         display_name: payload.display_name,
         username: payload.username,
-        password: payload.password,
+        password: null,
         is_default: payload.is_default,
         status: payload.status,
       }),
@@ -91,6 +106,16 @@ export function AccountPoolPage() {
 
   const deleteAccountMutation = useMutation({
     mutationFn: (accountId: string) => api.deleteOfficialAccount(accountId),
+    onSuccess: refreshPoolQueries,
+  });
+
+  const loginMutation = useMutation({
+    mutationFn: (accountId: string) => api.loginOfficialAccount(accountId),
+    onSuccess: refreshPoolQueries,
+  });
+
+  const sessionTestMutation = useMutation({
+    mutationFn: (accountId: string) => api.testOfficialAccountSession(accountId),
     onSuccess: refreshPoolQueries,
   });
 
@@ -118,12 +143,23 @@ export function AccountPoolPage() {
   const accountsByCompany = useMemo(() => {
     const grouped = new Map<string, OfficialAccount[]>();
     for (const account of accountsQuery.data || []) {
-      const items = grouped.get(account.company_key) || [];
-      items.push(account);
-      grouped.set(account.company_key, items);
+      const bucket = grouped.get(account.company_key) || [];
+      bucket.push(account);
+      grouped.set(account.company_key, bucket);
     }
     return grouped;
   }, [accountsQuery.data]);
+
+  const defaultAccountsByCompany = useMemo(() => {
+    const grouped = new Map<string, OfficialAccount | undefined>();
+    for (const [companyKey, accounts] of accountsByCompany.entries()) {
+      grouped.set(
+        companyKey,
+        accounts.find((account) => account.is_default) || accounts[0],
+      );
+    }
+    return grouped;
+  }, [accountsByCompany]);
 
   const bindingsByCompany = useMemo(() => {
     const grouped = new Map<string, string | null>();
@@ -133,9 +169,12 @@ export function AccountPoolPage() {
     return grouped;
   }, [bindingsQuery.data]);
 
-  const defaultAccountCount = (accountsQuery.data || []).filter((item) => item.is_default).length;
+  const configuredCompanies = Array.from(defaultAccountsByCompany.values()).filter(Boolean).length;
+  const loggedInCompanies = Array.from(defaultAccountsByCompany.values()).filter(
+    (account) => account?.is_logged_in,
+  ).length;
   const boundCompanyCount = (bindingsQuery.data || []).filter(
-    (item) => item.default_resume_asset_id,
+    (binding) => binding.default_resume_asset_id,
   ).length;
 
   const globalError =
@@ -145,279 +184,252 @@ export function AccountPoolPage() {
     (bindingsQuery.error instanceof Error && bindingsQuery.error.message) ||
     (createAccountMutation.error instanceof Error && createAccountMutation.error.message) ||
     (updateAccountMutation.error instanceof Error && updateAccountMutation.error.message) ||
-    (uploadAssetMutation.error instanceof Error && uploadAssetMutation.error.message) ||
-    (updateBindingMutation.error instanceof Error && updateBindingMutation.error.message) ||
     (deleteAccountMutation.error instanceof Error && deleteAccountMutation.error.message) ||
+    (loginMutation.error instanceof Error && loginMutation.error.message) ||
+    (sessionTestMutation.error instanceof Error && sessionTestMutation.error.message) ||
+    (uploadAssetMutation.error instanceof Error && uploadAssetMutation.error.message) ||
     (deleteAssetMutation.error instanceof Error && deleteAssetMutation.error.message) ||
+    (updateBindingMutation.error instanceof Error && updateBindingMutation.error.message) ||
     null;
 
   return (
-    <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
-        <div className="absolute inset-0 bg-grid-fade bg-[size:22px_22px] opacity-35" />
-        <div className="relative flex flex-wrap items-start justify-between gap-4">
+    <div className="space-y-4">
+      <section className="rounded-[30px] border border-ink/10 bg-shell/90 p-5 shadow-console">
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="max-w-3xl">
-            <p className="text-xs uppercase tracking-[0.24em] text-slate">
-              {"\u8d26\u53f7\u4e0e\u7b80\u5386\u6c60"}
-            </p>
-            <h1 className="mt-3 font-display text-5xl text-ink">
-              {"\u628a\u5b98\u7f51\u8d26\u53f7\u3001\u4f1a\u8bdd\u7f13\u5b58\u548c\u9ed8\u8ba4\u7b80\u5386\u90fd\u6536\u8fdb\u540c\u4e00\u4e2a\u6295\u9012\u8d44\u4ea7\u5e93"}
+            <p className="text-xs uppercase tracking-[0.24em] text-slate">账号与简历池</p>
+            <h1 className="mt-2 font-display text-3xl text-ink md:text-4xl">
+              手动登录官网，缓存会话，再复用到批量投递
             </h1>
-            <p className="mt-4 text-sm leading-7 text-slate">
-              {
-                "\u6279\u91cf\u6295\u9012\u4f1a\u4ece\u8fd9\u91cc\u8bfb\u53d6\u6bcf\u5bb6\u516c\u53f8\u7684\u9ed8\u8ba4\u8d26\u53f7\u548c\u7b80\u5386\u3002\u7f13\u5b58\u7684 storage state \u4e5f\u4f1a\u8ddf\u8d26\u53f7\u7ed1\u5b9a\u5c55\u793a\u5728\u6b64\u9875\u3002"
-              }
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate">
+              这里不再保存邮箱密码登录链路。每家公司只保留一个紧凑摘要，点击“登录”会打开对应平台官网，
+              你手动完成登录后，系统只缓存会话并在投递前做有效性检查。
             </p>
           </div>
-          <div className="rounded-[28px] border border-ink/10 bg-paper/80 p-5">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate">
-              {"\u6295\u9012\u7b56\u7565"}
-            </p>
-            <p className="mt-3 max-w-xs text-sm leading-7 text-ink">
-              {
-                "\u9ed8\u8ba4\u4f7f\u7528\u534a\u81ea\u52a8\u6a21\u5f0f\uff0c\u81ea\u52a8\u586b\u5199\u540e\u505c\u5728\u6700\u7ec8\u63d0\u4ea4\u524d\u3002\u5168\u81ea\u52a8\u6a21\u5f0f\u53ea\u5728\u7ed3\u679c\u9875\u663e\u5f0f\u5f00\u542f\u3002"
-              }
-            </p>
+
+          <div className="grid min-w-[260px] gap-3 sm:grid-cols-3">
+            <div className="rounded-[22px] border border-ink/10 bg-paper px-4 py-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-slate">已配置公司</p>
+              <p className="mt-2 font-display text-3xl text-ink">{configuredCompanies}</p>
+            </div>
+            <div className="rounded-[22px] border border-ink/10 bg-paper px-4 py-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-slate">已登录</p>
+              <p className="mt-2 font-display text-3xl text-ink">{loggedInCompanies}</p>
+            </div>
+            <div className="rounded-[22px] border border-ink/10 bg-paper px-4 py-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-slate">已绑默认简历</p>
+              <p className="mt-2 font-display text-3xl text-ink">{boundCompanyCount}</p>
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-3">
-        <MetricCard
-          label="\u5df2\u914d\u7f6e\u7ad9\u70b9"
-          value={String(sitesQuery.data?.length || 0)}
-          hint="\u9996\u6279\u56fa\u5b9a\u8986\u76d6 5 \u5bb6\u5b98\u7f51"
-        />
-        <MetricCard
-          label="\u9ed8\u8ba4\u8d26\u53f7"
-          value={String(defaultAccountCount)}
-          hint="\u6bcf\u5bb6\u516c\u53f8\u6700\u591a\u53ea\u4f1a\u6709\u4e00\u4e2a\u9ed8\u8ba4\u8d26\u53f7"
-        />
-        <MetricCard
-          label="\u7ed1\u5b9a\u7b80\u5386"
-          value={String(boundCompanyCount)}
-          hint="\u6279\u91cf\u6295\u9012\u4f1a\u76f4\u63a5\u5957\u7528\u8fd9\u4e9b\u9ed8\u8ba4\u7b80\u5386"
-        />
-      </section>
+      {globalError ? (
+        <section className="rounded-[24px] border border-ember/30 bg-ember/10 px-4 py-3 text-sm text-ember">
+          {globalError}
+        </section>
+      ) : null}
 
-      <section className="grid gap-6 xl:grid-cols-[0.82fr_1.18fr]">
-        <div className="space-y-6">
-          <section className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
-            <div className="flex items-center gap-3">
-              <Vault size={18} className="text-slate" />
-              <p className="text-xs uppercase tracking-[0.22em] text-slate">
-                {"\u7b80\u5386\u8d44\u4ea7"}
-              </p>
-            </div>
+      <section className="space-y-3">
+        {sitesQuery.data?.map((site) => {
+          const accounts = accountsByCompany.get(site.company_key) || [];
+          const defaultAccount = defaultAccountsByCompany.get(site.company_key);
+          const bindingId = bindingsByCompany.get(site.company_key) || "";
+          const expanded = expandedCompanyKey === site.company_key;
+          const draft =
+            accountDrafts[site.company_key] || createEmptyDraft(accounts.length === 0);
+          const isLoginPending = loginMutation.isPending && loginMutation.variables === defaultAccount?.id;
+          const isSessionTestPending =
+            sessionTestMutation.isPending && sessionTestMutation.variables === defaultAccount?.id;
 
-            <div className="mt-5 space-y-3 rounded-[28px] border border-ink/10 bg-paper p-4">
-              <label className="space-y-2">
-                <span className="text-xs uppercase tracking-[0.18em] text-slate">
-                  {"\u8d44\u4ea7\u540d\u79f0"}
-                </span>
-                <input
-                  value={assetLabel}
-                  onChange={(event) => setAssetLabel(event.target.value)}
-                  className="w-full rounded-2xl border border-ink/10 bg-shell px-4 py-3 text-sm text-ink outline-none transition focus:border-ink/30"
-                  placeholder="\u4f8b\u5982\uff1a2026 \u793e\u62db\u7248"
-                />
-              </label>
+          return (
+            <article
+              key={site.company_key}
+              className="rounded-[28px] border border-ink/10 bg-shell/90 p-4 shadow-console"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h2 className="font-display text-2xl text-ink">{site.company_name}</h2>
+                    <span className="rounded-full border border-ink/10 bg-paper px-3 py-1 text-xs uppercase tracking-[0.18em] text-slate">
+                      {site.source_sites.join(" / ")}
+                    </span>
+                  </div>
 
-              <label className="flex min-h-[148px] cursor-pointer flex-col items-center justify-center rounded-[28px] border border-dashed border-ink/20 bg-shell text-center transition hover:border-ink/35 hover:bg-paper">
-                <Upload size={18} className="text-slate" />
-                <p className="mt-4 text-sm font-semibold text-ink">
-                  {selectedFile?.name || "\u9009\u62e9 PDF / DOCX \u7b80\u5386"}
-                </p>
-                <p className="mt-2 text-xs uppercase tracking-[0.18em] text-slate">
-                  {"\u5355\u51fb\u66ff\u6362\u6587\u4ef6"}
-                </p>
-                <input
-                  type="file"
-                  accept=".pdf,.docx"
-                  className="hidden"
-                  onChange={(event) => {
-                    setSelectedFile(event.target.files?.[0] || null);
-                  }}
-                />
-              </label>
-
-              <button
-                type="button"
-                className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-shell transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:bg-ink/40"
-                disabled={!selectedFile || uploadAssetMutation.isPending}
-                onClick={() => {
-                  if (!selectedFile) {
-                    return;
-                  }
-                  uploadAssetMutation.mutate({ file: selectedFile, label: assetLabel });
-                }}
-              >
-                {uploadAssetMutation.isPending ? (
-                  <LoaderCircle size={16} className="animate-spin" />
-                ) : (
-                  <Upload size={16} />
-                )}
-                {uploadAssetMutation.isPending
-                  ? "\u4e0a\u4f20\u4e2d..."
-                  : "\u6536\u8fdb\u7b80\u5386\u6c60"}
-              </button>
-            </div>
-
-            <div className="mt-5 space-y-3">
-              {(assetsQuery.data || []).map((asset) => (
-                <div
-                  key={asset.id}
-                  className="rounded-[24px] border border-ink/10 bg-paper px-4 py-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-ink">{asset.label}</p>
-                      <p className="mt-1 truncate text-sm text-slate">{asset.source_filename}</p>
-                      <p className="mt-2 text-xs text-slate">
-                        {new Date(asset.updated_at).toLocaleString()}
+                  <div className="mt-4 grid gap-3 md:grid-cols-4">
+                    <div className="rounded-[22px] border border-ink/10 bg-paper px-4 py-3">
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-slate">默认账号</p>
+                      <p className="mt-2 truncate text-sm font-semibold text-ink">
+                        {defaultAccount?.display_name || "未配置"}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      className="rounded-full border border-ink/10 bg-shell p-2 text-ink transition hover:bg-paper disabled:opacity-50"
-                      disabled={deleteAssetMutation.isPending}
-                      onClick={() => deleteAssetMutation.mutate(asset.id)}
-                      aria-label="\u5220\u9664\u7b80\u5386\u8d44\u4ea7"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {!assetsQuery.data?.length ? (
-                <div className="rounded-[24px] border border-dashed border-ink/15 bg-paper px-4 py-5 text-sm leading-7 text-slate">
-                  {"\u6682\u65e0\u6295\u9012\u8d44\u4ea7\u3002\u5148\u4e0a\u4f20\u4e00\u4efd\u7b80\u5386\uff0c\u518d\u7ed9\u6bcf\u5bb6\u5b98\u7f51\u914d\u7f6e\u9ed8\u8ba4\u7ed1\u5b9a\u3002"}
-                </div>
-              ) : null}
-            </div>
-          </section>
-        </div>
 
-        <section className="space-y-4">
-          {(sitesQuery.data || []).map((site) => {
-            const siteAccounts = accountsByCompany.get(site.company_key) || [];
-            const draft = accountDrafts[site.company_key] || emptyDraft();
-            const selectedResumeId = bindingsByCompany.get(site.company_key) || "";
-            return (
-              <article
-                key={site.company_key}
-                className="rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate">
-                      {site.label}
-                    </p>
-                    <h2 className="mt-2 font-display text-3xl text-ink">
-                      {site.company_name}
-                    </h2>
-                    <p className="mt-2 text-sm leading-7 text-slate">
-                      {site.source_sites.join(" | ")} |{" "}
-                      {site.supported_variants.map((item) => pillLabel(item)).join(" / ")}
-                    </p>
+                    <div
+                      className={cn(
+                        "rounded-[22px] border px-4 py-3",
+                        loginTone(Boolean(defaultAccount?.is_logged_in)),
+                      )}
+                    >
+                      <p className="text-[11px] uppercase tracking-[0.18em]">登录状态</p>
+                      <p className="mt-2 text-sm font-semibold">
+                        {defaultAccount?.is_logged_in ? "已登录" : "未登录"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-[22px] border border-ink/10 bg-paper px-4 py-3">
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-slate">最近测试结果</p>
+                      <p className="mt-2 line-clamp-2 text-sm leading-6 text-ink">
+                        {defaultAccount?.last_test_message || "尚未测试"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-[22px] border border-ink/10 bg-paper px-4 py-3">
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-slate">最近测试时间</p>
+                      <p className="mt-2 text-sm font-semibold text-ink">
+                        {formatDate(defaultAccount?.last_tested_at)}
+                      </p>
+                    </div>
                   </div>
-                  <div className="rounded-3xl border border-ink/10 bg-paper px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate">
-                      {"\u9ed8\u8ba4\u7b80\u5386"}
-                    </p>
-                    <select
-                      value={selectedResumeId}
-                      className="mt-2 min-w-[220px] rounded-2xl border border-ink/10 bg-shell px-3 py-2 text-sm text-ink outline-none"
-                      onChange={(event) =>
-                        updateBindingMutation.mutate({
-                          companyKey: site.company_key,
-                          defaultResumeAssetId: event.target.value || null,
-                        })
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper px-4 py-2 text-sm font-semibold text-ink transition hover:bg-shell disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!defaultAccount || isLoginPending}
+                    onClick={() => {
+                      if (!defaultAccount) {
+                        return;
                       }
-                    >
-                      <option value="">{"\u672a\u7ed1\u5b9a"}</option>
-                      {(assetsQuery.data || []).map((asset) => (
-                        <option key={asset.id} value={asset.id}>
-                          {asset.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+                      loginMutation.mutate(defaultAccount.id);
+                    }}
+                  >
+                    {isLoginPending ? (
+                      <LoaderCircle size={15} className="animate-spin" />
+                    ) : (
+                      <LogIn size={15} />
+                    )}
+                    登录
+                  </button>
 
-                <div className="mt-5 grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
-                  <div className="space-y-3">
-                    {siteAccounts.map((account) => (
-                      <div
-                        key={account.id}
-                        className="rounded-[26px] border border-ink/10 bg-paper px-4 py-4"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="font-semibold text-ink">{account.display_name}</p>
-                              {account.is_default ? <StatusPill>default</StatusPill> : null}
-                              <StatusPill>{account.status}</StatusPill>
-                              <StatusPill>
-                                {account.session_cache?.status || "missing"}
-                              </StatusPill>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper px-4 py-2 text-sm font-semibold text-ink transition hover:bg-shell disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!defaultAccount || isSessionTestPending}
+                    onClick={() => {
+                      if (!defaultAccount) {
+                        return;
+                      }
+                      sessionTestMutation.mutate(defaultAccount.id);
+                    }}
+                  >
+                    {isSessionTestPending ? (
+                      <LoaderCircle size={15} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={15} />
+                    )}
+                    测试登录
+                  </button>
+
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2 text-sm font-semibold text-shell transition hover:bg-ink/90"
+                    onClick={() =>
+                      setExpandedCompanyKey((current) =>
+                        current === site.company_key ? null : site.company_key,
+                      )
+                    }
+                  >
+                    {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                    {expanded ? "收起" : "展开"}
+                  </button>
+                </div>
+              </div>
+
+              {expanded ? (
+                <div className="mt-4 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+                  <section className="rounded-[24px] border border-ink/10 bg-paper p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate">账号列表</p>
+                        <p className="mt-1 text-sm text-slate">
+                          这里只管理显示名、默认账号和缓存状态；登录统一走平台官网。
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-ink/10 bg-shell px-3 py-1 text-xs uppercase tracking-[0.18em] text-slate">
+                        {accounts.length} 个账号
+                      </span>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                      {accounts.length ? (
+                        accounts.map((account) => (
+                          <div
+                            key={account.id}
+                            className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-ink/10 bg-shell px-4 py-3"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="truncate text-sm font-semibold text-ink">
+                                  {account.display_name}
+                                </p>
+                                {account.is_default ? (
+                                  <span className="rounded-full border border-mint/30 bg-mint/15 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-ink">
+                                    默认
+                                  </span>
+                                ) : null}
+                                <span
+                                  className={cn(
+                                    "rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.18em]",
+                                    loginTone(account.is_logged_in),
+                                  )}
+                                >
+                                  {account.is_logged_in ? "已登录" : "未登录"}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-xs text-slate">
+                                {account.last_test_message || "暂无测试记录"}
+                              </p>
                             </div>
-                            <p className="mt-1 text-sm text-slate">{account.username}</p>
-                            <p className="mt-2 text-xs text-slate">
-                              {account.session_cache?.storage_state_path ||
-                                "\u6682\u65e0\u7f13\u5b58\u8def\u5f84"}
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            {!account.is_default ? (
+
+                            <div className="flex flex-wrap gap-2">
+                              {!account.is_default ? (
+                                <button
+                                  type="button"
+                                  className="rounded-full border border-ink/10 bg-paper px-3 py-2 text-xs font-semibold text-ink transition hover:bg-shell disabled:opacity-50"
+                                  disabled={updateAccountMutation.isPending}
+                                  onClick={() =>
+                                    updateAccountMutation.mutate({
+                                      ...account,
+                                      is_default: true,
+                                    })
+                                  }
+                                >
+                                  设为默认
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
-                                className="rounded-full border border-ink/10 bg-shell px-4 py-2 text-sm font-semibold text-ink transition hover:bg-paper disabled:opacity-50"
-                                disabled={updateAccountMutation.isPending}
-                                onClick={() =>
-                                  updateAccountMutation.mutate({
-                                    accountId: account.id,
-                                    company_key: account.company_key,
-                                    display_name: account.display_name,
-                                    username: account.username,
-                                    password: null,
-                                    is_default: true,
-                                    status: account.status,
-                                  })
-                                }
+                                className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper px-3 py-2 text-xs font-semibold text-ink transition hover:bg-shell disabled:opacity-50"
+                                disabled={deleteAccountMutation.isPending}
+                                onClick={() => deleteAccountMutation.mutate(account.id)}
                               >
-                                {"\u8bbe\u4e3a\u9ed8\u8ba4"}
+                                <Trash2 size={13} />
+                                删除
                               </button>
-                            ) : null}
-                            <button
-                              type="button"
-                              className="rounded-full border border-ink/10 bg-shell p-2 text-ink transition hover:bg-paper disabled:opacity-50"
-                              disabled={deleteAccountMutation.isPending}
-                              onClick={() => deleteAccountMutation.mutate(account.id)}
-                              aria-label="\u5220\u9664\u8d26\u53f7"
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                            </div>
                           </div>
+                        ))
+                      ) : (
+                        <div className="rounded-[20px] border border-dashed border-ink/15 bg-shell px-4 py-4 text-sm text-slate">
+                          还没有给这家公司添加账号。
                         </div>
-                      </div>
-                    ))}
-                    {!siteAccounts.length ? (
-                      <div className="rounded-[24px] border border-dashed border-ink/15 bg-paper px-4 py-5 text-sm leading-7 text-slate">
-                        {"\u8fd8\u6ca1\u6709\u7ed9\u8fd9\u5bb6\u5b98\u7f51\u6dfb\u52a0\u53ef\u7528\u8d26\u53f7\u3002"}
-                      </div>
-                    ) : null}
-                  </div>
+                      )}
+                    </div>
 
-                  <div className="rounded-[28px] border border-ink/10 bg-paper p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate">
-                      {"\u65b0\u589e\u8d26\u53f7"}
-                    </p>
-                    <div className="mt-4 space-y-3">
-                      <label className="space-y-2">
-                        <span className="text-xs uppercase tracking-[0.16em] text-slate">
-                          {"\u663e\u793a\u540d"}
-                        </span>
+                    <div className="mt-4 rounded-[20px] border border-ink/10 bg-shell px-4 py-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate">新增账号</p>
+                      <div className="mt-3 flex flex-col gap-3 md:flex-row">
                         <input
                           value={draft.display_name}
                           onChange={(event) =>
@@ -429,106 +441,209 @@ export function AccountPoolPage() {
                               },
                             }))
                           }
-                          className="w-full rounded-2xl border border-ink/10 bg-shell px-4 py-3 text-sm text-ink outline-none transition focus:border-ink/30"
-                          placeholder="\u4f8b\u5982\uff1a\u6821\u62db\u526f\u8d26\u53f7"
+                          className="min-w-0 flex-1 rounded-2xl border border-ink/10 bg-paper px-4 py-3 text-sm text-ink outline-none transition focus:border-ink/30"
+                          placeholder={`${site.company_name} 默认账号`}
                         />
-                      </label>
+                        <label className="inline-flex items-center gap-2 rounded-2xl border border-ink/10 bg-paper px-4 py-3 text-sm text-ink">
+                          <input
+                            type="checkbox"
+                            checked={draft.is_default}
+                            onChange={(event) =>
+                              setAccountDrafts((current) => ({
+                                ...current,
+                                [site.company_key]: {
+                                  ...draft,
+                                  is_default: event.target.checked,
+                                },
+                              }))
+                            }
+                          />
+                          设为默认
+                        </label>
+                        <button
+                          type="button"
+                          className="rounded-full bg-ink px-5 py-3 text-sm font-semibold text-shell transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={!draft.display_name.trim() || createAccountMutation.isPending}
+                          onClick={() =>
+                            createAccountMutation.mutate({
+                              company_key: site.company_key,
+                              display_name: draft.display_name.trim(),
+                              is_default: draft.is_default,
+                            })
+                          }
+                        >
+                          {createAccountMutation.isPending ? "保存中..." : "添加账号"}
+                        </button>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="rounded-[24px] border border-ink/10 bg-paper p-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate">默认简历</p>
+                    <p className="mt-1 text-sm text-slate">
+                      批量投递时会自动套用这份简历，不在这里执行投递动作。
+                    </p>
+
+                    <div className="mt-4 rounded-[20px] border border-ink/10 bg-shell px-4 py-4">
                       <label className="space-y-2">
-                        <span className="text-xs uppercase tracking-[0.16em] text-slate">
-                          {"\u767b\u5f55\u540d"}
+                        <span className="text-xs uppercase tracking-[0.18em] text-slate">
+                          绑定到 {site.company_name}
                         </span>
-                        <input
-                          value={draft.username}
+                        <select
+                          value={bindingId}
                           onChange={(event) =>
-                            setAccountDrafts((current) => ({
-                              ...current,
-                              [site.company_key]: {
-                                ...draft,
-                                username: event.target.value,
-                              },
-                            }))
+                            updateBindingMutation.mutate({
+                              companyKey: site.company_key,
+                              defaultResumeAssetId: event.target.value || null,
+                            })
                           }
-                          className="w-full rounded-2xl border border-ink/10 bg-shell px-4 py-3 text-sm text-ink outline-none transition focus:border-ink/30"
-                          placeholder="candidate@example.com"
-                        />
-                      </label>
-                      <label className="space-y-2">
-                        <span className="text-xs uppercase tracking-[0.16em] text-slate">
-                          {"\u5bc6\u7801"}
-                        </span>
-                        <input
-                          type="password"
-                          value={draft.password}
-                          onChange={(event) =>
-                            setAccountDrafts((current) => ({
-                              ...current,
-                              [site.company_key]: {
-                                ...draft,
-                                password: event.target.value,
-                              },
-                            }))
-                          }
-                          className="w-full rounded-2xl border border-ink/10 bg-shell px-4 py-3 text-sm text-ink outline-none transition focus:border-ink/30"
-                          placeholder="******"
-                        />
-                      </label>
-                      <label className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-shell px-4 py-3 text-sm text-ink">
-                        <input
-                          type="checkbox"
-                          checked={draft.is_default}
-                          onChange={(event) =>
-                            setAccountDrafts((current) => ({
-                              ...current,
-                              [site.company_key]: {
-                                ...draft,
-                                is_default: event.target.checked,
-                              },
-                            }))
-                          }
-                        />
-                        {"\u8bbe\u4e3a\u9ed8\u8ba4\u8d26\u53f7"}
+                          className="w-full rounded-2xl border border-ink/10 bg-paper px-4 py-3 text-sm text-ink outline-none transition focus:border-ink/30"
+                        >
+                          <option value="">未绑定</option>
+                          {assetsQuery.data?.map((asset) => (
+                            <option key={asset.id} value={asset.id}>
+                              {asset.label}
+                            </option>
+                          ))}
+                        </select>
                       </label>
 
-                      <button
-                        type="button"
-                        className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-shell transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:bg-ink/40"
-                        disabled={
-                          createAccountMutation.isPending ||
-                          !draft.username.trim() ||
-                          !draft.password.trim()
-                        }
-                        onClick={() =>
-                          createAccountMutation.mutate({
-                            company_key: site.company_key,
-                            display_name: draft.display_name,
-                            username: draft.username,
-                            password: draft.password,
-                            is_default: draft.is_default,
-                            status: "active",
-                          })
-                        }
-                      >
-                        {createAccountMutation.isPending ? (
-                          <LoaderCircle size={16} className="animate-spin" />
-                        ) : null}
-                        {createAccountMutation.isPending
-                          ? "\u4fdd\u5b58\u4e2d..."
-                          : "\u5199\u5165\u8d26\u53f7\u6c60"}
-                      </button>
+                      <div className="mt-4 rounded-[18px] border border-dashed border-ink/15 bg-paper px-4 py-4 text-sm text-slate">
+                        {bindingId
+                          ? `当前默认简历：${
+                              assetsQuery.data?.find((asset) => asset.id === bindingId)?.label ||
+                              "已绑定"
+                            }`
+                          : "还没绑定简历。先展开下方简历池上传一份，再给这家公司设置默认简历。"}
+                      </div>
                     </div>
-                  </div>
+
+                    <div className="mt-4 rounded-[20px] border border-ink/10 bg-shell px-4 py-4">
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate">支持来源</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {site.supported_variants.map((variant) => (
+                          <span
+                            key={variant}
+                            className="rounded-full border border-ink/10 bg-paper px-3 py-1 text-xs uppercase tracking-[0.18em] text-slate"
+                          >
+                            {pillLabel(variant)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </section>
                 </div>
-              </article>
-            );
-          })}
-        </section>
+              ) : null}
+            </article>
+          );
+        })}
       </section>
 
-      {globalError ? (
-        <section className="rounded-[28px] border border-ember/30 bg-ember/10 px-5 py-4 text-sm text-ink">
-          {globalError}
-        </section>
-      ) : null}
+      <section className="rounded-[28px] border border-ink/10 bg-shell/90 p-4 shadow-console">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-3 rounded-[22px] border border-ink/10 bg-paper px-4 py-4 text-left"
+          onClick={() => setAssetsExpanded((current) => !current)}
+        >
+          <div className="flex items-center gap-3">
+            <Vault size={18} className="text-slate" />
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate">简历池</p>
+              <p className="mt-1 text-sm text-ink">
+                已收纳 {assetsQuery.data?.length || 0} 份投递资产，默认收起避免页面过大。
+              </p>
+            </div>
+          </div>
+          {assetsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </button>
+
+        {assetsExpanded ? (
+          <div className="mt-4 grid gap-4 xl:grid-cols-[0.75fr_1.25fr]">
+            <div className="rounded-[24px] border border-ink/10 bg-paper p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate">上传简历</p>
+              <div className="mt-4 space-y-3">
+                <input
+                  value={assetLabel}
+                  onChange={(event) => setAssetLabel(event.target.value)}
+                  className="w-full rounded-2xl border border-ink/10 bg-shell px-4 py-3 text-sm text-ink outline-none transition focus:border-ink/30"
+                  placeholder="例如：2026 社招主简历"
+                />
+
+                <label className="flex min-h-[132px] cursor-pointer flex-col items-center justify-center rounded-[24px] border border-dashed border-ink/20 bg-shell text-center transition hover:border-ink/35 hover:bg-paper">
+                  <Upload size={18} className="text-slate" />
+                  <p className="mt-4 text-sm font-semibold text-ink">
+                    {selectedFile?.name || "选择 PDF / DOCX 简历"}
+                  </p>
+                  <p className="mt-2 text-xs uppercase tracking-[0.18em] text-slate">
+                    单击替换文件
+                  </p>
+                  <input
+                    type="file"
+                    accept=".pdf,.docx"
+                    className="hidden"
+                    onChange={(event) => {
+                      setSelectedFile(event.target.files?.[0] || null);
+                    }}
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-shell transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!selectedFile || uploadAssetMutation.isPending}
+                  onClick={() => {
+                    if (!selectedFile) {
+                      return;
+                    }
+                    uploadAssetMutation.mutate({ file: selectedFile, label: assetLabel });
+                  }}
+                >
+                  {uploadAssetMutation.isPending ? (
+                    <LoaderCircle size={15} className="animate-spin" />
+                  ) : (
+                    <Upload size={15} />
+                  )}
+                  {uploadAssetMutation.isPending ? "上传中..." : "收进简历池"}
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-[24px] border border-ink/10 bg-paper p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate">资产列表</p>
+              <div className="mt-4 space-y-3">
+                {assetsQuery.data?.length ? (
+                  assetsQuery.data.map((asset) => (
+                    <div
+                      key={asset.id}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-ink/10 bg-shell px-4 py-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-ink">{asset.label}</p>
+                        <p className="mt-1 text-xs text-slate">
+                          {asset.source_filename} | {(asset.file_size / 1024).toFixed(1)} KB
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper px-3 py-2 text-xs font-semibold text-ink transition hover:bg-shell disabled:opacity-50"
+                        disabled={deleteAssetMutation.isPending}
+                        onClick={() => deleteAssetMutation.mutate(asset.id)}
+                      >
+                        <Trash2 size={13} />
+                        删除
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-[20px] border border-dashed border-ink/15 bg-shell px-4 py-4 text-sm text-slate">
+                    暂无投递资产。先上传一份简历，再给各家公司配置默认绑定。
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </section>
     </div>
   );
 }
