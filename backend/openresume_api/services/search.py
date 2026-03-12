@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 import hashlib
 import json
 from time import perf_counter
-from typing import Any
+from typing import Any, Callable, Generic, TypeVar
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -33,6 +34,15 @@ from .risk import risk_control_service
 
 LLM_ANALYSIS_LIMIT = 120
 FETCH_CACHE_TTL_SECONDS = 60 * 60
+COMPANY_DIVERSITY_PENALTY_STEP = 8.0
+T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class DiversityRerankResult(Generic[T]):
+    item: T
+    final_score: float
+    original_index: int
 
 
 class SearchService:
@@ -54,23 +64,51 @@ class SearchService:
         requested = int(payload.company_job_limit or settings.search_company_job_limit)
         return max(1, min(1000, requested))
 
-    def _limit_rule_matches(
+    def _soft_diversity_rerank(
         self,
-        rule_matches,
+        items: list[T],
         *,
+        score_getter: Callable[[T], float],
+        company_getter: Callable[[T], str],
         match_limit: int,
         company_job_limit: int,
-    ):
-        limited = []
+    ) -> list[DiversityRerankResult[T]]:
+        limited: list[DiversityRerankResult[T]] = []
+        indexed_items = list(enumerate(items))
         company_counts: dict[str, int] = {}
-        for item in rule_matches:
-            company = item.draft.source_company.strip() or "unknown"
-            if company_counts.get(company, 0) >= company_job_limit:
-                continue
-            limited.append(item)
-            company_counts[company] = company_counts.get(company, 0) + 1
-            if len(limited) >= match_limit:
+        while indexed_items and len(limited) < match_limit:
+            best_offset: int | None = None
+            best_sort_key: tuple[float, float, int] | None = None
+            best_final_score = 0.0
+
+            for offset, (original_index, item) in enumerate(indexed_items):
+                company = company_getter(item).strip() or "unknown"
+                seen_count = company_counts.get(company, 0)
+                if seen_count >= company_job_limit:
+                    continue
+                base_score = float(score_getter(item))
+                final_score = round(
+                    max(base_score - COMPANY_DIVERSITY_PENALTY_STEP * seen_count, 0.0),
+                    2,
+                )
+                sort_key = (final_score, base_score, -original_index)
+                if best_sort_key is None or sort_key > best_sort_key:
+                    best_offset = offset
+                    best_sort_key = sort_key
+                    best_final_score = final_score
+
+            if best_offset is None:
                 break
+            original_index, item = indexed_items.pop(best_offset)
+            company = company_getter(item).strip() or "unknown"
+            limited.append(
+                DiversityRerankResult(
+                    item=item,
+                    final_score=best_final_score,
+                    original_index=original_index,
+                )
+            )
+            company_counts[company] = company_counts.get(company, 0) + 1
         return limited
 
     def _session_meta_key(self, session_id: str) -> str:
@@ -451,8 +489,10 @@ class SearchService:
                     requested_keywords=payload.must_have_keywords,
                     salary_floor=payload.salary_floor,
                 )
-                rule_matches = self._limit_rule_matches(
+                reranked_rule_matches = self._soft_diversity_rerank(
                     rule_matches,
+                    score_getter=lambda item: item.rule_score,
+                    company_getter=lambda item: item.draft.source_company,
                     match_limit=self._effective_match_limit(payload),
                     company_job_limit=self._effective_company_job_limit(payload),
                 )
@@ -468,9 +508,11 @@ class SearchService:
                 default_platform = payload.platforms[0] if payload.platforms else "official"
                 now = datetime.utcnow()
 
-                for rule_match in rule_matches:
+                for index, reranked in enumerate(reranked_rule_matches):
+                    rule_match = reranked.item
                     draft = rule_match.draft
                     listing_id = str(uuid4())
+                    row_timestamp = now + timedelta(microseconds=index)
                     job_rows.append(
                         {
                             "id": listing_id,
@@ -498,7 +540,7 @@ class SearchService:
                             "lang": draft.lang,
                             "crawl_time": draft.crawl_time or now,
                             "raw_payload": draft.raw_payload,
-                            "created_at": now,
+                            "created_at": row_timestamp,
                         }
                     )
                     match_rows.append(
@@ -507,12 +549,12 @@ class SearchService:
                             "session_id": session_id,
                             "job_id": listing_id,
                             "rule_score": rule_match.rule_score,
-                            "final_score": rule_match.rule_score,
+                            "final_score": reranked.final_score,
                             "highlights": rule_match.highlights,
                             "missing_keywords": rule_match.missing_keywords,
                             "risk_flags": rule_match.risk_flags,
-                            "created_at": now,
-                            "updated_at": now,
+                            "created_at": row_timestamp,
+                            "updated_at": row_timestamp,
                         }
                     )
 
@@ -639,7 +681,12 @@ class SearchService:
                 match_rows = db.exec(
                     select(JobMatch)
                     .where(JobMatch.session_id == session_id)
-                    .order_by(JobMatch.final_score.desc())
+                    .order_by(
+                        JobMatch.final_score.desc(),
+                        JobMatch.rule_score.desc(),
+                        JobMatch.updated_at.asc(),
+                        JobMatch.id.asc(),
+                    )
                 ).all()
                 jobs_by_id = {
                     job.id: job
@@ -686,10 +733,6 @@ class SearchService:
                     llm_result = llm_by_job.get(job.job_id)
                     if llm_result:
                         match.llm_score = llm_result.llm_score
-                        match.final_score = round(
-                            match.rule_score * 0.6 + llm_result.llm_score * 0.4,
-                            2,
-                        )
                         match.highlights = list(
                             dict.fromkeys(match.highlights + llm_result.highlights)
                         )
@@ -706,7 +749,42 @@ class SearchService:
                     match.analysis_provider = provider
                     match.analysis_degraded = degraded
                     match.analysis_notice = notice
-                    match.updated_at = datetime.utcnow()
+                reranked_pairs = self._soft_diversity_rerank(
+                    job_match_pairs,
+                    score_getter=lambda pair: round(
+                        pair[1].rule_score * 0.6 + pair[1].llm_score * 0.4,
+                        2,
+                    )
+                    if pair[1].llm_score is not None
+                    else pair[1].rule_score,
+                    company_getter=lambda pair: pair[0].source_company,
+                    match_limit=max(1, len(job_match_pairs)),
+                    company_job_limit=max(
+                        1,
+                        min(
+                            1000,
+                            int(session.company_job_limit or settings.search_company_job_limit),
+                        ),
+                    ),
+                )
+                reranked_by_listing_id = {
+                    pair[1].job_id: reranked
+                    for reranked in reranked_pairs
+                    for pair in [reranked.item]
+                }
+                reranked_order = {
+                    pair[1].job_id: offset
+                    for offset, reranked in enumerate(reranked_pairs)
+                    for pair in [reranked.item]
+                }
+                rerank_timestamp = datetime.utcnow()
+                for _job, match in job_match_pairs:
+                    reranked = reranked_by_listing_id.get(match.job_id)
+                    if reranked:
+                        match.final_score = reranked.final_score
+                    match.updated_at = rerank_timestamp + timedelta(
+                        microseconds=reranked_order.get(match.job_id, 0)
+                    )
                     db.add(match)
                 db.commit()
 

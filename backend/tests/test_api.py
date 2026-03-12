@@ -198,6 +198,28 @@ def variant_draft(
     return draft
 
 
+def company_draft(
+    *,
+    job_id: str,
+    source_company: str,
+    title: str = "Senior Frontend Engineer",
+    description_text: str | None = None,
+    requirements_text: str | None = None,
+) -> NormalizedJobDraft:
+    draft = sample_draft()
+    draft.job_id = job_id
+    draft.source_company = source_company
+    normalized_company = source_company.replace(" ", "").lower() or "company"
+    draft.source_site = f"{normalized_company}.example.com"
+    draft.title = title
+    if description_text is not None:
+        draft.description_text = description_text
+    if requirements_text is not None:
+        draft.requirements_text = requirements_text
+    draft.apply_url = f"https://{draft.source_site}/jobs/{job_id}"
+    return draft
+
+
 def test_disclaimer_flow(client):
     first = client.get("/api/app-state")
     assert first.status_code == 200
@@ -1130,6 +1152,82 @@ def test_search_pipeline_only_applies_llm_to_first_120_matches(client, monkeypat
     assert sum(1 for item in payload if item["llm_score"] is None) == 10
 
 
+def test_search_pipeline_soft_diversity_spreads_top_companies(client, monkeypatch):
+    upsert_profile(client)
+
+    async def fake_search_jobs(search, profile):
+        return [
+            company_draft(job_id="a-1", source_company="ByteDance"),
+            company_draft(job_id="a-2", source_company="ByteDance"),
+            company_draft(job_id="a-3", source_company="ByteDance"),
+            company_draft(job_id="jd-1", source_company="JD"),
+            company_draft(job_id="mt-1", source_company="Meituan"),
+            company_draft(job_id="a-4", source_company="ByteDance"),
+        ]
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+
+    session = create_search_session(
+        client,
+        salary_floor=0,
+        must_have_keywords=[],
+        cities=[],
+        match_limit=6,
+        company_job_limit=6,
+    )
+    assert session.status_code == 200
+
+    wait_for_session_status(client, session.json()["id"], "ready")
+    response = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert [item["source_company"] for item in payload[:3]] == [
+        "ByteDance",
+        "JD",
+        "Meituan",
+    ]
+    by_job_id = {item["job_id"]: item for item in payload}
+    assert by_job_id["a-1"]["final_score"] - by_job_id["a-2"]["final_score"] == 8.0
+    assert payload[0]["final_score"] > payload[3]["final_score"]
+
+
+def test_search_matches_order_is_stable_when_diversity_scores_tie(client, monkeypatch):
+    upsert_profile(client)
+
+    async def fake_search_jobs(search, profile):
+        return [
+            company_draft(job_id="a-1", source_company="ByteDance"),
+            company_draft(job_id="a-2", source_company="ByteDance"),
+            company_draft(job_id="jd-1", source_company="JD"),
+            company_draft(job_id="mt-1", source_company="Meituan"),
+            company_draft(job_id="jd-2", source_company="JD"),
+            company_draft(job_id="mt-2", source_company="Meituan"),
+        ]
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+
+    session = create_search_session(
+        client,
+        salary_floor=0,
+        must_have_keywords=[],
+        cities=[],
+        match_limit=6,
+        company_job_limit=6,
+    )
+    assert session.status_code == 200
+
+    wait_for_session_status(client, session.json()["id"], "ready")
+    first = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    second = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    assert first.status_code == 200
+    assert second.status_code == 200
+
+    first_order = [item["job_id"] for item in first.json()]
+    second_order = [item["job_id"] for item in second.json()]
+    assert first_order == second_order
+
+
 def test_search_pipeline_caps_visible_matches_to_200(client, monkeypatch):
     upsert_profile(client)
 
@@ -1187,6 +1285,129 @@ def test_search_pipeline_caps_matches_per_company(client, monkeypatch):
     for item in payload:
         counts[item["source_company"]] = counts.get(item["source_company"], 0) + 1
     assert counts == {"ByteDance": 10, "JD": 10}
+
+
+def test_search_pipeline_soft_diversity_respects_company_cap(client, monkeypatch):
+    upsert_profile(client)
+
+    async def fake_search_jobs(search, profile):
+        return [
+            company_draft(job_id=f"a-{index}", source_company="ByteDance")
+            for index in range(1, 7)
+        ] + [
+            company_draft(job_id=f"jd-{index}", source_company="JD")
+            for index in range(1, 3)
+        ] + [
+            company_draft(job_id=f"mt-{index}", source_company="Meituan")
+            for index in range(1, 3)
+        ]
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+
+    session = create_search_session(
+        client,
+        salary_floor=0,
+        must_have_keywords=[],
+        cities=[],
+        match_limit=6,
+        company_job_limit=2,
+    )
+    assert session.status_code == 200
+
+    wait_for_session_status(client, session.json()["id"], "ready")
+    response = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert len(payload) == 6
+    counts: dict[str, int] = {}
+    for item in payload:
+        counts[item["source_company"]] = counts.get(item["source_company"], 0) + 1
+    assert counts == {"ByteDance": 2, "JD": 2, "Meituan": 2}
+    assert [item["source_company"] for item in payload[:3]] == [
+        "ByteDance",
+        "JD",
+        "Meituan",
+    ]
+
+
+def test_search_pipeline_recomputes_diversity_scores_after_llm_enrichment(
+    client, monkeypatch
+):
+    upsert_profile(client)
+
+    async def fake_search_jobs(search, profile):
+        return [
+            company_draft(job_id="a-1", source_company="ByteDance"),
+            company_draft(job_id="a-2", source_company="ByteDance"),
+            company_draft(job_id="jd-1", source_company="JD"),
+            company_draft(job_id="mt-1", source_company="Meituan"),
+        ]
+
+    async def fake_analyze_jobs(db, profile, jobs):
+        await asyncio.sleep(0.5)
+        llm_scores = {
+            "a-1": 80.0,
+            "a-2": 100.0,
+            "jd-1": 65.0,
+            "mt-1": 60.0,
+        }
+        return AnalysisBatch(
+            metadata=AnalysisMetadata(
+                provider="heuristic",
+                degraded=True,
+                notice="llm reranked",
+            ),
+            results=[
+                LLMResult(
+                    cache_key=f"cache-{job.job_id}",
+                    job_id=job.job_id,
+                    llm_score=llm_scores[job.job_id],
+                    highlights=["React"],
+                    missing_keywords=[],
+                    risk_flags=[],
+                    llm_summary="reranked",
+                )
+                for job in jobs
+            ],
+        )
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+    monkeypatch.setattr(llm_service, "analyze_jobs", fake_analyze_jobs)
+
+    session = create_search_session(
+        client,
+        salary_floor=0,
+        must_have_keywords=[],
+        cities=[],
+        match_limit=4,
+        company_job_limit=4,
+    )
+    assert session.status_code == 200
+    session_id = session.json()["id"]
+
+    wait_for_session_status(client, session_id, "ready")
+    initial = client.get(f"/api/search-sessions/{session_id}/matches")
+    assert initial.status_code == 200
+    initial_payload = initial.json()
+    initial_order = [item["job_id"] for item in initial_payload]
+    initial_scores = {item["job_id"]: item["final_score"] for item in initial_payload}
+
+    assert initial_order == ["a-1", "jd-1", "mt-1", "a-2"]
+
+    wait_for_analysis_status(client, session_id, "ready")
+    enriched = client.get(f"/api/search-sessions/{session_id}/matches")
+    assert enriched.status_code == 200
+    enriched_payload = enriched.json()
+    enriched_order = [item["job_id"] for item in enriched_payload]
+    enriched_scores = {item["job_id"]: item["final_score"] for item in enriched_payload}
+
+    assert enriched_order == ["a-2", "jd-1", "a-1", "mt-1"]
+    assert enriched_scores["a-2"] > initial_scores["a-2"]
+    assert enriched_scores["a-2"] > enriched_scores["jd-1"]
+    assert enriched_scores["jd-1"] > enriched_scores["a-1"]
+    assert enriched_payload[0]["llm_score"] == 100.0
+    assert enriched_payload[0]["analysis_notice"] == "llm reranked"
 
 
 def test_background_llm_failure_does_not_roll_back_ready_session(client, monkeypatch):
