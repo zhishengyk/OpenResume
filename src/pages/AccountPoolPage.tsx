@@ -4,7 +4,6 @@ import {
   ChevronUp,
   LoaderCircle,
   LogIn,
-  RefreshCw,
   Trash2,
   Upload,
   Vault,
@@ -16,12 +15,10 @@ import type { OfficialAccount, OfficialSite } from "../types";
 
 interface AccountDraft {
   display_name: string;
-  is_default: boolean;
 }
 
-const createEmptyDraft = (isDefault = true): AccountDraft => ({
+const createEmptyDraft = (): AccountDraft => ({
   display_name: "",
-  is_default: isDefault,
 });
 
 function formatDate(value?: string | null) {
@@ -85,23 +82,10 @@ export function AccountPoolPage() {
     onSuccess: (_, payload) => {
       setAccountDrafts((current) => ({
         ...current,
-        [payload.company_key]: createEmptyDraft(false),
+        [payload.company_key]: createEmptyDraft(),
       }));
       refreshPoolQueries();
     },
-  });
-
-  const updateAccountMutation = useMutation({
-    mutationFn: (payload: OfficialAccount) =>
-      api.updateOfficialAccount(payload.id, {
-        company_key: payload.company_key,
-        display_name: payload.display_name,
-        username: payload.username,
-        password: null,
-        is_default: payload.is_default,
-        status: payload.status,
-      }),
-    onSuccess: refreshPoolQueries,
   });
 
   const deleteAccountMutation = useMutation({
@@ -111,11 +95,6 @@ export function AccountPoolPage() {
 
   const loginMutation = useMutation({
     mutationFn: (accountId: string) => api.loginOfficialAccount(accountId),
-    onSuccess: refreshPoolQueries,
-  });
-
-  const sessionTestMutation = useMutation({
-    mutationFn: (accountId: string) => api.testOfficialAccountSession(accountId),
     onSuccess: refreshPoolQueries,
   });
 
@@ -183,10 +162,8 @@ export function AccountPoolPage() {
     (assetsQuery.error instanceof Error && assetsQuery.error.message) ||
     (bindingsQuery.error instanceof Error && bindingsQuery.error.message) ||
     (createAccountMutation.error instanceof Error && createAccountMutation.error.message) ||
-    (updateAccountMutation.error instanceof Error && updateAccountMutation.error.message) ||
     (deleteAccountMutation.error instanceof Error && deleteAccountMutation.error.message) ||
     (loginMutation.error instanceof Error && loginMutation.error.message) ||
-    (sessionTestMutation.error instanceof Error && sessionTestMutation.error.message) ||
     (uploadAssetMutation.error instanceof Error && uploadAssetMutation.error.message) ||
     (deleteAssetMutation.error instanceof Error && deleteAssetMutation.error.message) ||
     (updateBindingMutation.error instanceof Error && updateBindingMutation.error.message) ||
@@ -250,43 +227,81 @@ export function AccountPoolPage() {
         </section>
       ) : null}
 
-      <section className="space-y-3">
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {sitesQuery.data?.map((site) => {
           const accounts = accountsByCompany.get(site.company_key) || [];
           const defaultAccount = defaultAccountsByCompany.get(site.company_key);
           const bindingId = bindingsByCompany.get(site.company_key) || "";
           const expanded = expandedCompanyKey === site.company_key;
-          const draft =
-            accountDrafts[site.company_key] || createEmptyDraft(accounts.length === 0);
+          const draft = accountDrafts[site.company_key] || createEmptyDraft();
           const isProvisioningDefaultAccount =
             createAccountMutation.isPending &&
             createAccountMutation.variables?.company_key === site.company_key;
           const isLoginPending = loginMutation.isPending && loginMutation.variables === defaultAccount?.id;
-          const isSessionTestPending =
-            sessionTestMutation.isPending && sessionTestMutation.variables === defaultAccount?.id;
 
           return (
             <article
               key={site.company_key}
-              className="rounded-[28px] border border-ink/10 bg-shell/90 p-4 shadow-console"
+              className={cn(
+                "rounded-[28px] border border-ink/10 bg-shell/90 p-4 shadow-console",
+                expanded ? "md:col-span-2 xl:col-span-4" : "",
+              )}
             >
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="min-w-0 flex-1">
+              <div className="flex h-full flex-col gap-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex flex-wrap items-center gap-3">
                     <h2 className="font-display text-2xl text-ink">{site.company_name}</h2>
+                    <span
+                      className={cn(
+                        "rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]",
+                        loginTone(Boolean(defaultAccount?.is_logged_in)),
+                      )}
+                    >
+                      {defaultAccount?.is_logged_in ? "已登录" : "未登录"}
+                    </span>
                     <span className="rounded-full border border-ink/10 bg-paper px-3 py-1 text-xs uppercase tracking-[0.18em] text-slate">
                       {site.source_sites.join(" / ")}
                     </span>
                   </div>
 
-                  <div className="mt-4 grid gap-3 md:grid-cols-4">
-                    <div className="rounded-[22px] border border-ink/10 bg-paper px-4 py-3">
-                      <p className="text-[11px] uppercase tracking-[0.18em] text-slate">默认账号</p>
-                      <p className="mt-2 truncate text-sm font-semibold text-ink">
-                        {defaultAccount?.display_name || "未配置"}
-                      </p>
-                    </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className={secondaryActionButtonClass}
+                      disabled={isProvisioningDefaultAccount || isLoginPending}
+                      onClick={() => {
+                        void (async () => {
+                          const account = await ensureDefaultAccount(site);
+                          loginMutation.mutate(account.id);
+                        })();
+                      }}
+                    >
+                      {isProvisioningDefaultAccount || isLoginPending ? (
+                        <LoaderCircle size={15} className="animate-spin" />
+                      ) : (
+                        <LogIn size={15} />
+                      )}
+                      登录
+                    </button>
 
+                    <button
+                      type="button"
+                      className={primaryActionButtonClass}
+                      onClick={() =>
+                        setExpandedCompanyKey((current) =>
+                          current === site.company_key ? null : site.company_key,
+                        )
+                      }
+                    >
+                      {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                      {expanded ? "收起" : "展开"}
+                    </button>
+                  </div>
+                </div>
+
+                {expanded ? (
+                <div className="mt-4 grid gap-4">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                     <div
                       className={cn(
                         "rounded-[22px] border px-4 py-3",
@@ -313,74 +328,18 @@ export function AccountPoolPage() {
                       </p>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className={secondaryActionButtonClass}
-                    disabled={isProvisioningDefaultAccount || isLoginPending}
-                    onClick={() => {
-                      void (async () => {
-                        const account = await ensureDefaultAccount(site);
-                        loginMutation.mutate(account.id);
-                      })();
-                    }}
-                  >
-                    {isProvisioningDefaultAccount || isLoginPending ? (
-                      <LoaderCircle size={15} className="animate-spin" />
-                    ) : (
-                      <LogIn size={15} />
-                    )}
-                    登录
-                  </button>
+                  <p className="text-[11px] leading-5 text-slate">
+                    点击登录后会打开官网页面。请在官网里手动完成登录，并关闭该窗口后再回到这里查看状态。
+                  </p>
 
-                  <button
-                    type="button"
-                    className={secondaryActionButtonClass}
-                    disabled={isProvisioningDefaultAccount || isSessionTestPending}
-                    onClick={() => {
-                      void (async () => {
-                        const account = await ensureDefaultAccount(site);
-                        sessionTestMutation.mutate(account.id);
-                      })();
-                    }}
-                  >
-                    {isProvisioningDefaultAccount || isSessionTestPending ? (
-                      <LoaderCircle size={15} className="animate-spin" />
-                    ) : (
-                      <RefreshCw size={15} />
-                    )}
-                    测试登录
-                  </button>
-
-                  <button
-                    type="button"
-                    className={primaryActionButtonClass}
-                    onClick={() =>
-                      setExpandedCompanyKey((current) =>
-                        current === site.company_key ? null : site.company_key,
-                      )
-                    }
-                  >
-                    {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                    {expanded ? "收起" : "展开"}
-                  </button>
-                </div>
-
-                <p className="w-full text-[11px] leading-5 text-slate">
-                  点击登录后会打开官网页面。请在官网里手动完成登录，并关闭该窗口后再回到这里查看状态。
-                </p>
-              </div>
-
-              {expanded ? (
-                <div className="mt-4 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-                  <section className="rounded-[24px] border border-ink/10 bg-paper p-4">
+                  <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+                    <section className="rounded-[24px] border border-ink/10 bg-paper p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-xs uppercase tracking-[0.2em] text-slate">账号列表</p>
                         <p className="mt-1 text-sm text-slate">
-                          这里只管理显示名、默认账号和缓存状态；登录统一走平台官网。
+                          这里只管理显示名和缓存状态；登录统一走平台官网。
                         </p>
                       </div>
                       <span className="rounded-full border border-ink/10 bg-shell px-3 py-1 text-xs uppercase tracking-[0.18em] text-slate">
@@ -400,11 +359,6 @@ export function AccountPoolPage() {
                                 <p className="truncate text-sm font-semibold text-ink">
                                   {account.display_name}
                                 </p>
-                                {account.is_default ? (
-                                  <span className="rounded-full border border-mint/30 bg-mint/15 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-ink">
-                                    默认
-                                  </span>
-                                ) : null}
                                 <span
                                   className={cn(
                                     "rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.18em]",
@@ -420,21 +374,6 @@ export function AccountPoolPage() {
                             </div>
 
                             <div className="flex flex-wrap gap-2">
-                              {!account.is_default ? (
-                                <button
-                                  type="button"
-                                  className={compactActionButtonClass}
-                                  disabled={updateAccountMutation.isPending}
-                                  onClick={() =>
-                                    updateAccountMutation.mutate({
-                                      ...account,
-                                      is_default: true,
-                                    })
-                                  }
-                                >
-                                  设为默认
-                                </button>
-                              ) : null}
                               <button
                                 type="button"
                                 className={compactActionButtonClass}
@@ -469,24 +408,8 @@ export function AccountPoolPage() {
                             }))
                           }
                           className="min-w-0 flex-1 rounded-2xl border border-ink/10 bg-paper px-4 py-3 text-sm text-ink outline-none transition focus:border-ink/30"
-                          placeholder={`${site.company_name} 默认账号`}
+                          placeholder={`${site.company_name} 账号`}
                         />
-                        <label className="inline-flex items-center gap-2 rounded-2xl border border-ink/10 bg-paper px-4 py-3 text-sm text-ink">
-                          <input
-                            type="checkbox"
-                            checked={draft.is_default}
-                            onChange={(event) =>
-                              setAccountDrafts((current) => ({
-                                ...current,
-                                [site.company_key]: {
-                                  ...draft,
-                                  is_default: event.target.checked,
-                                },
-                              }))
-                            }
-                          />
-                          设为默认
-                        </label>
                         <button
                           type="button"
                           className={primaryActionButtonClass}
@@ -495,7 +418,7 @@ export function AccountPoolPage() {
                             createAccountMutation.mutate({
                               company_key: site.company_key,
                               display_name: draft.display_name.trim(),
-                              is_default: draft.is_default,
+                              is_default: accounts.length === 0,
                             })
                           }
                         >
@@ -503,9 +426,9 @@ export function AccountPoolPage() {
                         </button>
                       </div>
                     </div>
-                  </section>
+                    </section>
 
-                  <section className="rounded-[24px] border border-ink/10 bg-paper p-4">
+                    <section className="rounded-[24px] border border-ink/10 bg-paper p-4">
                     <p className="text-xs uppercase tracking-[0.2em] text-slate">默认简历</p>
                     <p className="mt-1 text-sm text-slate">
                       批量投递时会自动套用这份简历，不在这里执行投递动作。
@@ -558,9 +481,11 @@ export function AccountPoolPage() {
                         ))}
                       </div>
                     </div>
-                  </section>
+                    </section>
+                  </div>
                 </div>
-              ) : null}
+                ) : null}
+              </div>
             </article>
           );
         })}

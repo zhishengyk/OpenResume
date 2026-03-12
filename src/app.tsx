@@ -44,14 +44,14 @@ export default function App() {
           </div>
 
           <main className="flex-1 space-y-6">
-            <header className="relative overflow-hidden rounded-[32px] border border-ink/10 bg-shell/90 p-6 shadow-console">
+            <header className="relative overflow-hidden rounded-[28px] border border-ink/10 bg-shell/90 p-5 shadow-console">
               <div className="absolute inset-0 bg-grid-fade bg-[size:26px_26px] opacity-25" />
               <div className="relative flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <p className="text-xs uppercase tracking-[0.28em] text-slate">
                     本地工作台
                   </p>
-                  <p className="mt-3 max-w-2xl font-display text-5xl leading-tight text-ink">
+                  <p className="mt-2 max-w-2xl font-display text-3xl leading-tight text-ink md:text-4xl">
                     官网搜索、模型排序和应用内验证都在这一套本地流程里完成。
                   </p>
                 </div>
