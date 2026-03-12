@@ -331,6 +331,50 @@ class SearchService:
         asyncio.create_task(self._run_pipeline(session.id, self._payload_from_session(session)))
         return session
 
+    async def start_analysis(self, db: Session, session_id: str) -> SearchSession:
+        session = db.get(SearchSession, session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Search session not found.")
+        if session.status != "ready":
+            raise HTTPException(
+                status_code=409,
+                detail="Search results are not ready for analysis.",
+            )
+        if session.analysis_status == "running":
+            raise HTTPException(status_code=409, detail="Analysis is already running.")
+        if session.analysis_status == "ready":
+            raise HTTPException(status_code=409, detail="Analysis has already finished.")
+
+        for match in db.exec(
+            select(JobMatch).where(JobMatch.session_id == session_id)
+        ).all():
+            match.analysis_degraded = False
+            match.analysis_notice = None
+            db.add(match)
+
+        session.analysis_status = "running"
+        session.analysis_degraded = False
+        session.analysis_notice = None
+        session.summary = "Search results are ready. AI analysis is running."
+        session.updated_at = datetime.utcnow()
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+
+        self._set_session_meta(
+            db,
+            session_id,
+            llm_ms=None,
+            time_to_llm_enriched_ms=None,
+        )
+        event_bus.publish(
+            session_id,
+            "llm_started",
+            "AI analysis started. Results will refresh when it finishes.",
+        )
+        asyncio.create_task(self._run_llm_enrichment(session_id))
+        return session
+
     async def reopen_verification(self, db: Session, session_id: str) -> dict[str, str]:
         session = db.get(SearchSession, session_id)
         if not session:
@@ -579,7 +623,7 @@ class SearchService:
                 session.analysis_degraded = False
                 session.analysis_notice = None
                 session.blocked_reason = None
-                session.summary = "Search results are ready. LLM analysis is running in background."
+                session.summary = "Search results are ready. AI analysis is waiting to start."
                 session.updated_at = datetime.utcnow()
                 db.add(session)
                 db.commit()
@@ -599,9 +643,8 @@ class SearchService:
                 event_bus.publish(
                     session_id,
                     "ready",
-                    "Results are ready. LLM analysis will update them in background.",
+                    "Results are ready. Start AI analysis when you want enhanced ranking.",
                 )
-                asyncio.create_task(self._run_llm_enrichment(session_id))
             except PlatformBlockedError as error:
                 detail = str(error)
                 verification_url = error.verification_url
@@ -666,15 +709,18 @@ class SearchService:
             if not session or session.status != "ready":
                 return
 
-            session.analysis_status = "running"
-            session.updated_at = datetime.utcnow()
-            db.add(session)
-            db.commit()
-            event_bus.publish(
-                session_id,
-                "llm_started",
-                "LLM analysis started in background.",
-            )
+            if session.analysis_status == "pending":
+                session.analysis_status = "running"
+                session.updated_at = datetime.utcnow()
+                db.add(session)
+                db.commit()
+                event_bus.publish(
+                    session_id,
+                    "llm_started",
+                    "AI analysis started. Results will refresh when it finishes.",
+                )
+            elif session.analysis_status != "running":
+                return
 
             try:
                 profile = db.get(CandidateProfile, 1) or CandidateProfile(id=1)
@@ -794,7 +840,7 @@ class SearchService:
                 session.analysis_provider = provider
                 session.analysis_degraded = degraded
                 session.analysis_notice = notice
-                session.summary = "Search finished. LLM analysis has been applied."
+                session.summary = "Search finished. AI analysis has been applied."
                 session.updated_at = datetime.utcnow()
                 db.add(session)
                 db.commit()
@@ -823,7 +869,7 @@ class SearchService:
                     session.analysis_status = "failed"
                     session.analysis_degraded = True
                     session.analysis_notice = detail
-                    session.summary = "Search finished, but background LLM analysis failed."
+                    session.summary = "Search finished, but AI analysis failed."
                     session.updated_at = datetime.utcnow()
                     db.add(session)
                     db.commit()

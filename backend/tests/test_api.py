@@ -131,6 +131,10 @@ def create_search_session(
     )
 
 
+def start_search_analysis(client, session_id: str):
+    return client.post(f"/api/search-sessions/{session_id}/start-analysis")
+
+
 def sample_draft() -> NormalizedJobDraft:
     return NormalizedJobDraft(
         source_company="ByteDance",
@@ -443,11 +447,17 @@ def test_search_pipeline_marks_ready_before_background_llm_finishes(client, monk
     session = create_search_session(client)
     assert session.status_code == 200
 
-    ready = wait_for_session_status(client, session.json()["id"], "ready")
-    assert ready["analysis_status"] in {"pending", "running"}
+    session_id = session.json()["id"]
+    ready = wait_for_session_status(client, session_id, "ready")
+    assert ready["analysis_status"] == "pending"
     assert ready["analysis_degraded"] is False
 
-    matches = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    time.sleep(0.7)
+    still_pending = client.get(f"/api/search-sessions/{session_id}")
+    assert still_pending.status_code == 200
+    assert still_pending.json()["analysis_status"] == "pending"
+
+    matches = client.get(f"/api/search-sessions/{session_id}/matches")
     assert matches.status_code == 200
     payload = matches.json()
     assert len(payload) == 1
@@ -460,12 +470,16 @@ def test_search_pipeline_marks_ready_before_background_llm_finishes(client, monk
     assert payload[0]["llm_score"] is None
     assert payload[0]["analysis_degraded"] is False
 
-    enriched = wait_for_analysis_status(client, session.json()["id"], "ready")
+    started = start_search_analysis(client, session_id)
+    assert started.status_code == 200
+    assert started.json()["analysis_status"] == "running"
+
+    enriched = wait_for_analysis_status(client, session_id, "ready")
     assert enriched["analysis_provider"] == "heuristic"
     assert enriched["analysis_degraded"] is True
     assert enriched["analysis_notice"] == "background analysis complete"
 
-    enriched_matches = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    enriched_matches = client.get(f"/api/search-sessions/{session_id}/matches")
     assert enriched_matches.status_code == 200
     enriched_payload = enriched_matches.json()
     assert enriched_payload[0]["llm_score"] == 88.0
@@ -509,6 +523,8 @@ def test_search_pipeline_records_stage_timings_in_session_meta(client, monkeypat
     session_id = session.json()["id"]
 
     wait_for_session_status(client, session_id, "ready")
+    started = start_search_analysis(client, session_id)
+    assert started.status_code == 200
     wait_for_analysis_status(client, session_id, "ready")
 
     with Session(db_module.engine) as db:
@@ -523,6 +539,64 @@ def test_search_pipeline_records_stage_timings_in_session_meta(client, monkeypat
     assert isinstance(meta.get("llm_ms"), int)
     assert isinstance(meta.get("time_to_llm_enriched_ms"), int)
     assert meta["time_to_llm_enriched_ms"] >= meta["time_to_ready_ms"]
+
+
+def test_search_analysis_requires_explicit_start_and_rejects_duplicate_starts(
+    client, monkeypatch
+):
+    upsert_profile(client)
+
+    async def fake_search_jobs(search, profile):
+        return [sample_draft()]
+
+    async def fake_analyze_jobs(db, profile, jobs):
+        await asyncio.sleep(0.2)
+        return AnalysisBatch(
+            metadata=AnalysisMetadata(
+                provider="heuristic",
+                degraded=False,
+                notice=None,
+            ),
+            results=[
+                LLMResult(
+                    cache_key=f"cache-{job.job_id}",
+                    job_id=job.job_id,
+                    llm_score=91.0,
+                    highlights=["React"],
+                    missing_keywords=[],
+                    risk_flags=[],
+                    llm_summary="started manually",
+                )
+                for job in jobs
+            ],
+        )
+
+    monkeypatch.setattr(official_adapter, "search_jobs", fake_search_jobs)
+    monkeypatch.setattr(llm_service, "analyze_jobs", fake_analyze_jobs)
+
+    session = create_search_session(client)
+    assert session.status_code == 200
+    session_id = session.json()["id"]
+
+    wait_for_session_status(client, session_id, "ready")
+    detail = client.get(f"/api/search-sessions/{session_id}")
+    assert detail.status_code == 200
+    assert detail.json()["analysis_status"] == "pending"
+
+    first_start = start_search_analysis(client, session_id)
+    assert first_start.status_code == 200
+    assert first_start.json()["analysis_status"] == "running"
+
+    duplicate_start = start_search_analysis(client, session_id)
+    assert duplicate_start.status_code == 409
+    assert "already running" in duplicate_start.json()["detail"]
+
+    finished = wait_for_analysis_status(client, session_id, "ready")
+    assert finished["analysis_provider"] == "heuristic"
+
+    completed_start = start_search_analysis(client, session_id)
+    assert completed_start.status_code == 409
+    assert "already finished" in completed_start.json()["detail"]
 
 
 def test_search_matches_merge_same_job_id_with_multi_locations(client, monkeypatch):
@@ -1140,9 +1214,12 @@ def test_search_pipeline_only_applies_llm_to_first_120_matches(client, monkeypat
     )
     assert session.status_code == 200
 
-    wait_for_session_status(client, session.json()["id"], "ready")
-    wait_for_analysis_status(client, session.json()["id"], "ready")
-    matches = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    session_id = session.json()["id"]
+    wait_for_session_status(client, session_id, "ready")
+    started = start_search_analysis(client, session_id)
+    assert started.status_code == 200
+    wait_for_analysis_status(client, session_id, "ready")
+    matches = client.get(f"/api/search-sessions/{session_id}/matches")
     assert matches.status_code == 200
 
     payload = matches.json()
@@ -1395,6 +1472,8 @@ def test_search_pipeline_recomputes_diversity_scores_after_llm_enrichment(
 
     assert initial_order == ["a-1", "jd-1", "mt-1", "a-2"]
 
+    started = start_search_analysis(client, session_id)
+    assert started.status_code == 200
     wait_for_analysis_status(client, session_id, "ready")
     enriched = client.get(f"/api/search-sessions/{session_id}/matches")
     assert enriched.status_code == 200
@@ -1426,15 +1505,19 @@ def test_background_llm_failure_does_not_roll_back_ready_session(client, monkeyp
     session = create_search_session(client)
     assert session.status_code == 200
 
-    ready = wait_for_session_status(client, session.json()["id"], "ready")
-    assert ready["analysis_status"] in {"pending", "running"}
+    session_id = session.json()["id"]
+    ready = wait_for_session_status(client, session_id, "ready")
+    assert ready["analysis_status"] == "pending"
 
-    failed = wait_for_analysis_status(client, session.json()["id"], "failed")
+    started = start_search_analysis(client, session_id)
+    assert started.status_code == 200
+
+    failed = wait_for_analysis_status(client, session_id, "failed")
     assert failed["status"] == "ready"
     assert failed["analysis_degraded"] is True
     assert "background llm crashed" in (failed["analysis_notice"] or "")
 
-    matches = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    matches = client.get(f"/api/search-sessions/{session_id}/matches")
     assert matches.status_code == 200
     payload = matches.json()
     assert len(payload) == 1
@@ -1475,12 +1558,15 @@ def test_openai_failure_falls_back_to_heuristic(client, monkeypatch):
     session = create_search_session(client)
     assert session.status_code == 200
 
-    wait_for_session_status(client, session.json()["id"], "ready")
-    enriched = wait_for_analysis_status(client, session.json()["id"], "ready")
+    session_id = session.json()["id"]
+    wait_for_session_status(client, session_id, "ready")
+    started = start_search_analysis(client, session_id)
+    assert started.status_code == 200
+    enriched = wait_for_analysis_status(client, session_id, "ready")
     assert enriched["analysis_degraded"] is True
     assert "LLM" in (enriched["analysis_notice"] or "")
 
-    matches = client.get(f"/api/search-sessions/{session.json()['id']}/matches")
+    matches = client.get(f"/api/search-sessions/{session_id}/matches")
     assert matches.status_code == 200
     assert len(matches.json()) == 1
 

@@ -9,6 +9,7 @@ import httpx
 from sqlmodel import Session
 
 from ..models import CandidateProfile, JobListing, LLMAnalysisCache
+from .llm_common import extract_chat_message_text
 from .profile import profile_service
 from .runtime_config import LLMRuntimeConfig, runtime_config_service
 
@@ -43,6 +44,9 @@ class AnalysisBatch:
 
 class LLMConfigurationError(RuntimeError):
     pass
+
+
+OPENAI_ANALYZE_TIMEOUT_SECONDS = 90.0
 
 
 def job_content_hash(job: JobListing) -> str:
@@ -290,7 +294,7 @@ class OpenAICompatibleLLMProvider:
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.config.openai_api_key}",
         }
-        async with httpx.AsyncClient(timeout=45.0) as client:
+        async with httpx.AsyncClient(timeout=OPENAI_ANALYZE_TIMEOUT_SECONDS) as client:
             response = await client.post(
                 f"{self.config.openai_base_url.rstrip('/')}/chat/completions",
                 headers=headers,
@@ -299,7 +303,8 @@ class OpenAICompatibleLLMProvider:
             response.raise_for_status()
             data = response.json()
 
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        message = data.get("choices", [{}])[0].get("message", {})
+        content = extract_chat_message_text(message if isinstance(message, dict) else {})
         parsed = self._extract_json(content)
         items = parsed.get("results", [])
         results_by_job = {
@@ -348,7 +353,7 @@ class LLMService:
         if llm_config.llm_provider == "openai_compatible":
             if llm_state.configured:
                 return OpenAICompatibleLLMProvider(llm_config)
-            raise LLMConfigurationError(llm_state.notice)
+            return HeuristicLLMProvider(notice=llm_state.notice)
         return HeuristicLLMProvider(notice=llm_state.notice)
 
     def _cached_results(

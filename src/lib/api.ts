@@ -174,6 +174,10 @@ export const api = {
   getSourceCompanies: () => request<string[]>("/api/sources/companies"),
   listSearchSessions: () => request<SearchSession[]>("/api/search-sessions"),
   getSearchSession: (id: string) => request<SearchSession>(`/api/search-sessions/${id}`),
+  startSearchAnalysis: (id: string) =>
+    request<SearchSession>(`/api/search-sessions/${id}/start-analysis`, {
+      method: "POST",
+    }),
   retrySearchSession: (id: string) =>
     request<SearchSession>(`/api/search-sessions/${id}/retry`, {
       method: "POST",
