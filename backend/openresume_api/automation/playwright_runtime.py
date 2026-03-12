@@ -17,6 +17,9 @@ class PlaywrightAutomationPage:
     async def goto(self, url: str) -> None:
         await self._page.goto(url, wait_until="domcontentloaded")
 
+    async def current_url(self) -> str:
+        return self._page.url or ""
+
     async def content_contains(self, markers: list[str]) -> bool:
         if not markers:
             return False
@@ -184,6 +187,8 @@ class PlaywrightAutomationRuntime:
         *,
         storage_state_path: str,
         callback: Callable[[AutomationPage], Awaitable[object | None]],
+        completion_callback: Callable[[], Awaitable[bool]] | None = None,
+        completion_poll_ms: int = 1000,
         timeout_seconds: int = 300,
     ) -> None:
         try:
@@ -210,10 +215,24 @@ class PlaywrightAutomationRuntime:
             )
             try:
                 await callback(PlaywrightAutomationPage(page))
-                try:
-                    await asyncio.wait_for(done, timeout=timeout_seconds)
-                except asyncio.TimeoutError:
-                    pass
+                deadline = asyncio.get_running_loop().time() + timeout_seconds
+                poll_seconds = max(completion_poll_ms, 200) / 1000
+                while not done.done():
+                    remaining = deadline - asyncio.get_running_loop().time()
+                    if remaining <= 0:
+                        break
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.shield(done),
+                            timeout=min(poll_seconds, remaining),
+                        )
+                        break
+                    except asyncio.TimeoutError:
+                        if not completion_callback:
+                            continue
+                        await context.storage_state(path=str(state_path))
+                        if await completion_callback():
+                            break
                 await context.storage_state(path=str(state_path))
             finally:
                 await context.close()

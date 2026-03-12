@@ -12,7 +12,7 @@ import {
 import { useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { cn, pillLabel } from "../lib/utils";
-import type { OfficialAccount } from "../types";
+import type { OfficialAccount, OfficialSite } from "../types";
 
 interface AccountDraft {
   display_name: string;
@@ -192,6 +192,26 @@ export function AccountPoolPage() {
     (updateBindingMutation.error instanceof Error && updateBindingMutation.error.message) ||
     null;
 
+  const secondaryActionButtonClass =
+    "inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper px-3.5 py-1.5 text-xs font-semibold text-ink transition hover:bg-shell disabled:cursor-not-allowed disabled:opacity-50";
+  const primaryActionButtonClass =
+    "inline-flex items-center gap-2 rounded-full bg-ink px-3.5 py-1.5 text-xs font-semibold text-shell transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-50";
+  const compactActionButtonClass =
+    "inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-shell disabled:opacity-50";
+
+  const ensureDefaultAccount = async (site: OfficialSite) => {
+    const existingAccount = defaultAccountsByCompany.get(site.company_key);
+    if (existingAccount) {
+      return existingAccount;
+    }
+
+    return createAccountMutation.mutateAsync({
+      company_key: site.company_key,
+      display_name: `${site.company_name} 账号`,
+      is_default: true,
+    });
+  };
+
   return (
     <div className="space-y-4">
       <section className="rounded-[30px] border border-ink/10 bg-shell/90 p-5 shadow-console">
@@ -238,6 +258,9 @@ export function AccountPoolPage() {
           const expanded = expandedCompanyKey === site.company_key;
           const draft =
             accountDrafts[site.company_key] || createEmptyDraft(accounts.length === 0);
+          const isProvisioningDefaultAccount =
+            createAccountMutation.isPending &&
+            createAccountMutation.variables?.company_key === site.company_key;
           const isLoginPending = loginMutation.isPending && loginMutation.variables === defaultAccount?.id;
           const isSessionTestPending =
             sessionTestMutation.isPending && sessionTestMutation.variables === defaultAccount?.id;
@@ -295,16 +318,16 @@ export function AccountPoolPage() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper px-4 py-2 text-sm font-semibold text-ink transition hover:bg-shell disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!defaultAccount || isLoginPending}
+                    className={secondaryActionButtonClass}
+                    disabled={isProvisioningDefaultAccount || isLoginPending}
                     onClick={() => {
-                      if (!defaultAccount) {
-                        return;
-                      }
-                      loginMutation.mutate(defaultAccount.id);
+                      void (async () => {
+                        const account = await ensureDefaultAccount(site);
+                        loginMutation.mutate(account.id);
+                      })();
                     }}
                   >
-                    {isLoginPending ? (
+                    {isProvisioningDefaultAccount || isLoginPending ? (
                       <LoaderCircle size={15} className="animate-spin" />
                     ) : (
                       <LogIn size={15} />
@@ -314,16 +337,16 @@ export function AccountPoolPage() {
 
                   <button
                     type="button"
-                    className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper px-4 py-2 text-sm font-semibold text-ink transition hover:bg-shell disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!defaultAccount || isSessionTestPending}
+                    className={secondaryActionButtonClass}
+                    disabled={isProvisioningDefaultAccount || isSessionTestPending}
                     onClick={() => {
-                      if (!defaultAccount) {
-                        return;
-                      }
-                      sessionTestMutation.mutate(defaultAccount.id);
+                      void (async () => {
+                        const account = await ensureDefaultAccount(site);
+                        sessionTestMutation.mutate(account.id);
+                      })();
                     }}
                   >
-                    {isSessionTestPending ? (
+                    {isProvisioningDefaultAccount || isSessionTestPending ? (
                       <LoaderCircle size={15} className="animate-spin" />
                     ) : (
                       <RefreshCw size={15} />
@@ -333,7 +356,7 @@ export function AccountPoolPage() {
 
                   <button
                     type="button"
-                    className="inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2 text-sm font-semibold text-shell transition hover:bg-ink/90"
+                    className={primaryActionButtonClass}
                     onClick={() =>
                       setExpandedCompanyKey((current) =>
                         current === site.company_key ? null : site.company_key,
@@ -344,6 +367,10 @@ export function AccountPoolPage() {
                     {expanded ? "收起" : "展开"}
                   </button>
                 </div>
+
+                <p className="w-full text-[11px] leading-5 text-slate">
+                  点击登录后会打开官网页面。请在官网里手动完成登录，并关闭该窗口后再回到这里查看状态。
+                </p>
               </div>
 
               {expanded ? (
@@ -396,7 +423,7 @@ export function AccountPoolPage() {
                               {!account.is_default ? (
                                 <button
                                   type="button"
-                                  className="rounded-full border border-ink/10 bg-paper px-3 py-2 text-xs font-semibold text-ink transition hover:bg-shell disabled:opacity-50"
+                                  className={compactActionButtonClass}
                                   disabled={updateAccountMutation.isPending}
                                   onClick={() =>
                                     updateAccountMutation.mutate({
@@ -410,7 +437,7 @@ export function AccountPoolPage() {
                               ) : null}
                               <button
                                 type="button"
-                                className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-paper px-3 py-2 text-xs font-semibold text-ink transition hover:bg-shell disabled:opacity-50"
+                                className={compactActionButtonClass}
                                 disabled={deleteAccountMutation.isPending}
                                 onClick={() => deleteAccountMutation.mutate(account.id)}
                               >
@@ -462,7 +489,7 @@ export function AccountPoolPage() {
                         </label>
                         <button
                           type="button"
-                          className="rounded-full bg-ink px-5 py-3 text-sm font-semibold text-shell transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-50"
+                          className={primaryActionButtonClass}
                           disabled={!draft.display_name.trim() || createAccountMutation.isPending}
                           onClick={() =>
                             createAccountMutation.mutate({
